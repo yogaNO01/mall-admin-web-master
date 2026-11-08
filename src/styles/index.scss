@@ -4,6 +4,24 @@
 @use './element-ui.scss';
 @use './sidebar.scss';
 
+// Keep field controls on the same vertical baseline across maintenance forms.
+.app-main .el-form:not(.el-form--inline):not(.el-form--label-top) {
+  --el-form-label-width: 180px;
+  > .el-form-item > .el-form-item__label {
+    width: 180px !important;
+    flex: 0 0 180px;
+    justify-content: flex-end;
+    white-space: nowrap;
+  }
+  > .el-form-item > .el-form-item__content {
+    min-width: 0;
+    margin-left: 0 !important;
+  }
+  > .el-form-item:has(> .el-form-item__content):not(:has(> .el-form-item__label)) {
+    padding-left: 180px;
+  }
+}
+
 body {
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;

@@ -1,46 +1,104 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { reactive, onBeforeUnmount, watch } from 'vue'
 import Tinymce from '@/components/Tinymce/index.vue'
 import SingleUpload from '@/components/Upload/singleUpload.vue'
 import type { ContentTranslations, TranslationField } from '@/types/localization'
+import { autoTranslateAPI } from '@/apis/translation'
+import { ElMessage } from 'element-plus'
 
-const props = defineProps<{ modelValue?: ContentTranslations; source?: object; fields: TranslationField[]; compact?: boolean }>()
+const props = defineProps<{ modelValue?: ContentTranslations; source?: object; fields: TranslationField[]; compact?: boolean; showChinese?: boolean }>()
 const emit = defineEmits<{ (event: 'update:modelValue', value: ContentTranslations): void }>()
-const opened = ref('pt')
-const valueOf = (key: string) => props.modelValue?.pt?.[key] || ''
-const setValue = (key: string, value: string) => emit('update:modelValue', {
-  ...props.modelValue, pt: { ...props.modelValue?.pt, [key]: value },
+const translating = reactive<Record<string, boolean>>({})
+const timers: Record<string, ReturnType<typeof setTimeout>> = {}
+const valueOf = (language: 'en' | 'pt', key: string) => props.modelValue?.[language]?.[key] || ''
+const setValue = (language: 'en' | 'pt', key: string, value: string) => emit('update:modelValue', {
+  ...props.modelValue, [language]: { ...props.modelValue?.[language], [key]: value },
 })
-const sourceOf = (key: string) => String((props.source as Record<string, unknown> | undefined)?.[key] || '').replace(/<[^>]*>/g, ' ').slice(0, 160)
+const sourceOf = (key: string) => String((props.source as Record<string, unknown> | undefined)?.[key] || '')
+const setChinese = (key: string, value: string) => {
+  if (props.source) (props.source as Record<string, unknown>)[key] = value
+}
+const plainSource = (key: string) => sourceOf(key).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+const hasContent = (value: unknown) => String(value || '').replace(/<[^>]*>/g, ' ').trim().length > 0
+const translate = async (field: TranslationField, target?: 'en' | 'pt', force = false) => {
+  const text = plainSource(field.key)
+  if (!text || field.type === 'image' || field.type === 'number') return ElMessage.warning('请先填写中文文本字段')
+  const targets = target ? [target] : (['en', 'pt'] as const).filter(language => force || !hasContent(valueOf(language, field.key)))
+  if (!targets.length) return
+  const loadingKey = target ? `${field.key}-${target}` : field.key
+  translating[loadingKey] = true
+  const before = { en: valueOf('en', field.key), pt: valueOf('pt', field.key) }
+  try {
+    const result = await autoTranslateAPI({ text, targetLangs: targets })
+    if (plainSource(field.key) !== text) return
+    const next = { ...props.modelValue }
+    targets.forEach(language => {
+      // Never overwrite text that was entered while the request was in flight.
+      if (valueOf(language, field.key) === before[language] && (force || !hasContent(valueOf(language, field.key)))) {
+        next[language] = { ...next[language], [field.key]: result.data[language] || '' }
+      }
+    })
+    emit('update:modelValue', next)
+    ElMessage.success('翻译已填充，可继续修改')
+  } catch {
+    // Request errors are displayed by the shared client; manual editing stays available.
+  } finally {
+    translating[loadingKey] = false
+  }
+}
+const scheduleTranslate = (field: TranslationField) => {
+  if (field.type === 'image' || field.type === 'number') return
+  clearTimeout(timers[field.key])
+  timers[field.key] = setTimeout(() => translate(field, undefined, true), 900)
+}
+props.fields.forEach(field => {
+  watch(() => [props.source, (props.source as Record<string, unknown> | undefined)?.[field.key]] as const, ([source, value], [previousSource, previous]) => {
+    if (source !== previousSource) { clearTimeout(timers[field.key]); return }
+    if (value && value !== previous && String(value).replace(/<[^>]*>/g, '').trim()) scheduleTranslate(field)
+  })
+})
+onBeforeUnmount(() => Object.values(timers).forEach(timer => clearTimeout(timer)))
 </script>
 
 <template>
-  <el-collapse v-model="opened" accordion class="multilingual-fields" :class="{ compact }">
-    <el-collapse-item name="pt">
-      <template #title><span class="translation-title">葡萄牙语内容 <span>Português</span></span><el-tag size="small" effect="plain">{{ fields.filter(field => valueOf(field.key).trim()).length }}/{{ fields.length }}</el-tag></template>
-      <p class="translation-intro">中文使用上方原有字段。以下内容用于商城葡萄牙语展示；普通文案留空时显示中文原文。人民币与巴西雷亚尔金额必须分别填写，不会自动换算；货号、库存和颜色值共用。</p>
-      <el-form-item v-for="field in fields" :key="field.key" :label="field.label" class="translation-item">
-        <div class="translation-input">
-          <single-upload v-if="field.type === 'image'" :model-value="valueOf(field.key)" @update:model-value="setValue(field.key, $event)" />
-          <tinymce v-else-if="field.type === 'html'" :model-value="valueOf(field.key)" :height="320" @update:model-value="setValue(field.key, $event)" />
-          <el-input v-else :model-value="valueOf(field.key)" :type="field.type === 'textarea' ? 'textarea' : field.type === 'number' ? 'number' : 'text'" :min="field.type === 'number' ? 0 : undefined" :step="field.type === 'number' ? '0.01' : undefined" :autosize="field.type === 'textarea' ? { minRows: 2, maxRows: 8 } : undefined" :maxlength="field.maxlength" :placeholder="field.type === 'number' ? `请填写${field.label}` : `请填写${field.label}的葡萄牙语内容`" @update:model-value="setValue(field.key, $event)" />
-          <p v-if="sourceOf(field.key) && field.type !== 'image'" class="source-copy">中文：{{ sourceOf(field.key) }}</p>
-          <p v-if="field.hint" class="field-hint">{{ field.hint }}</p>
-        </div>
-      </el-form-item>
-    </el-collapse-item>
-  </el-collapse>
+  <div class="multilingual-fields" :class="{ compact }">
+    <div v-for="field in fields" :key="field.key" class="translation-item">
+      <div v-if="showChinese !== false" class="field-label">{{ field.label }} <span v-if="field.hint">{{ field.hint }}</span></div>
+      <div v-if="showChinese !== false" class="language-row zh-row"><span class="language-label">中文</span><div class="translation-input">
+        <single-upload v-if="field.type === 'image'" :model-value="sourceOf(field.key)" @update:model-value="setChinese(field.key, $event)" />
+        <tinymce v-else-if="field.type === 'html'" :model-value="sourceOf(field.key)" :height="260" @update:model-value="setChinese(field.key, $event)" />
+        <el-input v-else :model-value="sourceOf(field.key)" :type="field.type === 'textarea' ? 'textarea' : field.type === 'number' ? 'number' : 'text'" :autosize="field.type === 'textarea' ? { minRows: 2, maxRows: 8 } : undefined" :maxlength="field.maxlength" @update:model-value="setChinese(field.key, $event)" />
+      </div></div>
+      <div v-if="field.type === 'html'" class="html-language-heading">英文详情（EN）</div>
+      <div class="language-row" :class="{ 'html-language-row': field.type === 'html' }"><span v-if="field.type !== 'html'" class="language-label">EN</span><div class="translation-input">
+        <tinymce v-if="field.type === 'html'" :model-value="valueOf('en', field.key)" :height="260" @update:model-value="setValue('en', field.key, $event)" />
+        <single-upload v-else-if="field.type === 'image'" :model-value="valueOf('en', field.key)" @update:model-value="setValue('en', field.key, $event)" />
+        <el-input v-else :model-value="valueOf('en', field.key)" :type="field.type === 'textarea' ? 'textarea' : 'text'" :autosize="field.type === 'textarea' ? { minRows: 2, maxRows: 8 } : undefined" :maxlength="field.maxlength" @update:model-value="setValue('en', field.key, $event)" />
+      </div><el-button v-if="field.type !== 'image' && field.type !== 'number'" class="translate-button" size="small" :loading="translating[`${field.key}-en`]" @click="translate(field, 'en', true)">翻译</el-button></div>
+      <div v-if="field.type === 'html'" class="html-language-heading">葡语详情（PT）</div>
+      <div class="language-row" :class="{ 'html-language-row': field.type === 'html' }"><span v-if="field.type !== 'html'" class="language-label">PT</span><div class="translation-input">
+        <tinymce v-if="field.type === 'html'" :model-value="valueOf('pt', field.key)" :height="260" @update:model-value="setValue('pt', field.key, $event)" />
+        <single-upload v-else-if="field.type === 'image'" :model-value="valueOf('pt', field.key)" @update:model-value="setValue('pt', field.key, $event)" />
+        <el-input v-else :model-value="valueOf('pt', field.key)" :type="field.type === 'textarea' ? 'textarea' : 'text'" :autosize="field.type === 'textarea' ? { minRows: 2, maxRows: 8 } : undefined" :maxlength="field.maxlength" @update:model-value="setValue('pt', field.key, $event)" />
+      </div><el-button v-if="field.type !== 'image' && field.type !== 'number'" class="translate-button" size="small" :loading="translating[`${field.key}-pt`]" @click="translate(field, 'pt', true)">翻译</el-button></div>
+      <span v-if="translating[field.key]" class="translation-status">正在自动翻译空白语言…</span>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.multilingual-fields { margin:24px 0; padding:0 20px; border:1px solid #dce6f2; border-radius:8px; background:#f9fbfe; }
-.multilingual-fields :deep(.el-collapse-item__header),.multilingual-fields :deep(.el-collapse-item__wrap) { background:transparent; border:0; }
-.translation-title { margin-right:12px; color:#244e76; font-weight:600; }
-.translation-title span { margin-left:8px; color:#7c8fa3; font-size:12px; font-weight:400; }
-.translation-intro { margin:2px 0 20px; color:#8a98a8; font-size:12px; line-height:1.8; }
-.translation-input { width:100%; min-width:0; }
-.source-copy,.field-hint { margin:6px 0 0; color:#8a98a8; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
-.field-hint { color:#56799b; }
-.translation-item:last-child { margin-bottom:6px; }
+.multilingual-fields { width:100%; flex-basis:100%; min-width:0; margin:0; padding:0; border:0; background:transparent; }
+.translation-item { padding:0; }
+.field-label { margin-bottom:10px; color:#244e76; font-weight:600; }
+.field-label span { margin-left:8px; color:#8a98a8; font-size:12px; font-weight:400; }
+.language-row { position:relative; display:flex; align-items:flex-start; margin:8px 0 0; }
+.language-label { position:absolute; z-index:1; left:10px; top:0; line-height:32px; color:#8a98a8; font-size:12px; pointer-events:none; }
+.translation-input { flex:1; min-width:0; width:100%; }
+.translate-button { flex:0 0 auto; margin-left:8px; }
+.translation-input :deep(.el-input__wrapper) { padding-left:40px; }
+.translation-input :deep(.el-textarea__inner) { padding-left:40px; }
+.translation-status { display:block; margin:4px 0 0; color:#8a98a8; font-size:12px; }
+.html-language-heading { margin:24px 0 8px; color:#244e76; font-weight:600; }
+.html-language-row { margin-top:0; }
 .compact { margin:12px 0; padding:0 12px; }
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MultilingualFields from '@/components/MultilingualFields.vue'
 import { ref, computed, onMounted, inject, type Ref } from 'vue'
 import { ElButton, ElSwitch, ElCheckboxGroup, ElCheckbox, ElRadioGroup, ElRadioButton, ElInput, ElDatePicker, ElTable, ElTableColumn, ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
@@ -172,15 +173,19 @@ const handleNext = () => {
       </el-form-item>
       <el-form-item label="详细页标题：">
         <el-input v-model="compProductParam.detailTitle"></el-input>
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'detailTitle',label:'详情标题'}]" />
       </el-form-item>
       <el-form-item label="详细页描述：">
         <el-input v-model="compProductParam.detailDesc"></el-input>
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'detailDesc',label:'详情描述',type:'textarea'}]" />
       </el-form-item>
       <el-form-item label="商品关键字：">
         <el-input v-model="compProductParam.keywords"></el-input>
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'keywords',label:'商品关键词'}]" />
       </el-form-item>
       <el-form-item label="商品备注：">
         <el-input v-model="compProductParam.note" type="textarea" :autoSize="true"></el-input>
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'note',label:'商品备注',type:'textarea'}]" />
       </el-form-item>
       <el-form-item label="选择优惠方式：">
         <el-radio-group v-model="compProductParam.promotionType">

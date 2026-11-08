@@ -22,6 +22,7 @@ export const asyncRouterMap: RouteRecordExt[] = [
     name: 'pms',
     meta: { title: '商品', icon: 'product' },
     children: [
+      {path:'freight',name:'freight',component:()=>import('@/views/pms/freight/index.vue'),meta:{title:'运费设置',icon:'product-list'}},
       {
         path: 'product',
         name: 'product',

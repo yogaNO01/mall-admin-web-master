@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import MultilingualFields from '@/components/MultilingualFields.vue'
-import { ref, computed, onMounted, inject, type Ref } from 'vue'
+import { ref, computed, onMounted, inject, watch, type Ref } from 'vue'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { getProductCategoryListWithChildrenAPI } from '@/apis/productCate'
 import { getBrandListAPI } from '@/apis/brand'
+import { getExchangeRatesAPI, type ExchangeRateResponse } from '@/apis/exchangeRates'
 import type { PmsProductParam } from '@/types/product'
 import type { ElCascaderDataVo, ElSelectDataVo } from '@/types/common'
 
@@ -53,6 +54,53 @@ const getProductCateList = async () => {
 }
 // 选择器中的品牌数据
 const brandOptions = ref<ElSelectDataVo[]>([])
+const exchangeRates = ref<ExchangeRateResponse | null>(null)
+const exchangeRateError = ref(false)
+const loadExchangeRates = async () => {
+  try {
+    exchangeRates.value = (await getExchangeRatesAPI()).data
+    exchangeRateError.value = false
+  } catch {
+    exchangeRateError.value = true
+  }
+}
+const convertedPrice = (currency: 'USD' | 'EUR') => {
+  const price = Number(compProductParam.value.price)
+  const rate = exchangeRates.value?.rates?.[currency]
+  return Number.isFinite(price) && rate ? (price * rate).toFixed(2) : '--'
+}
+const syncConvertedPrices = () => {
+  const price = Number(compProductParam.value.price)
+  const rates = exchangeRates.value?.rates
+  if (!Number.isFinite(price) || !rates?.USD || !rates.EUR) return
+  const translations = compProductParam.value.translations || {}
+  compProductParam.value.translations = {
+    ...translations,
+    en: translations.en?.priceManual === 'true' ? translations.en : { ...translations.en, price: (price * rates.USD).toFixed(2), priceRate: String(rates.USD), priceCurrency: 'USD' },
+    pt: translations.pt?.priceManual === 'true' ? translations.pt : { ...translations.pt, price: (price * rates.EUR).toFixed(2), priceRate: String(rates.EUR), priceCurrency: 'EUR' },
+  }
+  const originalPrice = Number(compProductParam.value.originalPrice)
+  if (compProductParam.value.originalPrice != null && Number.isFinite(originalPrice) && originalPrice >= 0) {
+    for (const [language, rate] of [['en', rates.USD], ['pt', rates.EUR]] as const) {
+      const saved = compProductParam.value.translations[language] || {}
+      if (saved.originalPriceManual !== 'true') compProductParam.value.translations[language] = { ...saved, originalPrice: (originalPrice * rate).toFixed(2), originalPriceRate: String(rate) }
+    }
+  }
+}
+watch(() => [compProductParam.value.price, compProductParam.value.originalPrice, exchangeRates.value], syncConvertedPrices, { deep: true })
+const editForeignPrice = (language: 'en' | 'pt', value: string, field: 'price' | 'originalPrice' = 'price') => {
+  const translations = compProductParam.value.translations || {}
+  compProductParam.value.translations = { ...translations, [language]: { ...translations[language], [field]: value, [`${field}Manual`]: 'true' } }
+}
+const changeCnyPrice = (field: 'price' | 'originalPrice', value: string) => {
+  compProductParam.value[field] = value === '' ? undefined : Number(value)
+  const translations = compProductParam.value.translations || {}
+  for (const language of ['en', 'pt'] as const) {
+    translations[language] = { ...translations[language], [`${field}Manual`]: 'false' }
+  }
+  compProductParam.value.translations = translations
+  syncConvertedPrices()
+}
 // 获取品牌列表数据
 const getBrandList = async () => {
   const res = await getBrandListAPI({ pageNum: 1, pageSize: 100 })
@@ -63,6 +111,7 @@ const getBrandList = async () => {
 onMounted(async () => {
   await getProductCateList()
   await getBrandList()
+  await loadExchangeRates()
 })
 
 // 表单引用
@@ -85,10 +134,8 @@ const handleNext = async () => {
   const prices = [
     { label: '人民币商品售价', value: compProductParam.value.price },
     { label: '人民币市场价', value: compProductParam.value.originalPrice },
-    { label: '巴西雷亚尔商品售价', value: compProductParam.value.translations?.pt?.price },
-    { label: '巴西雷亚尔市场价', value: compProductParam.value.translations?.pt?.originalPrice },
   ]
-  const invalidPrice = prices.find(item => item.value === '' || item.value == null || !Number.isFinite(Number(item.value)) || Number(item.value) < 0)
+  const invalidPrice = prices.find(item => item.value == null || !Number.isFinite(Number(item.value)) || Number(item.value) < 0)
   if (invalidPrice) return ElMessage.warning(`请填写有效的${invalidPrice.label}`)
   if (productInfoForm.value) {
     try {
@@ -126,9 +173,11 @@ const handleBrandChange = (val: number) => {
       </el-form-item>
       <el-form-item label="商品名称：" prop="name">
         <el-input v-model="compProductParam.name"></el-input>
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'name',label:'商品名称-英文/PT',maxlength:140}]" />
       </el-form-item>
       <el-form-item label="副标题：" prop="subTitle">
         <el-input v-model="compProductParam.subTitle"></el-input>
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'subTitle',label:'副标题-英文/PT'}]" />
       </el-form-item>
       <el-form-item label="商品品牌：" prop="brandId">
         <el-select v-model="compProductParam.brandId" @change="handleBrandChange" placeholder="请选择品牌">
@@ -139,21 +188,45 @@ const handleBrandChange = (val: number) => {
       <el-form-item label="商品介绍：">
         <el-input :autoSize="true" v-model="compProductParam.description" type="textarea"
           placeholder="请输入内容"></el-input>
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'description',label:'商品介绍-英文/PT',type:'textarea'}]" />
       </el-form-item>
       <el-form-item label="商品货号：">
         <el-input v-model="compProductParam.productSn"></el-input>
       </el-form-item>
-      <el-form-item label="商品售价（CNY）：">
-        <el-input v-model="compProductParam.price"></el-input>
+      <el-form-item label="商品售价（CNY）：" label-width="155px">
+        <el-input :model-value="compProductParam.price" @update:model-value="changeCnyPrice('price', $event)"></el-input>
+        <div class="price-conversion-hint">
+          <template v-if="exchangeRates && !exchangeRateError">
+            汇率来源：{{ exchangeRates.source || '实时汇率' }}，日期：{{ exchangeRates.date || '今日' }}
+          </template>
+          <span v-else>汇率暂时不可用</span>
+        </div>
+      </el-form-item>
+      <el-form-item label="美元价格（USD）：">
+        <el-input :model-value="compProductParam.translations?.en?.price" type="number" min="0" @update:model-value="editForeignPrice('en', $event)" />
+        <div class="price-conversion-hint">汇率：1 CNY = {{ exchangeRates?.rates.USD || '--' }} USD</div>
+      </el-form-item>
+      <el-form-item label="欧元价格（EUR）：">
+        <el-input :model-value="compProductParam.translations?.pt?.price" type="number" min="0" @update:model-value="editForeignPrice('pt', $event)" />
+        <div class="price-conversion-hint">汇率：1 CNY = {{ exchangeRates?.rates.EUR || '--' }} EUR</div>
       </el-form-item>
       <el-form-item label="市场价（CNY）：">
-        <el-input v-model="compProductParam.originalPrice"></el-input>
+        <el-input :model-value="compProductParam.originalPrice" @update:model-value="changeCnyPrice('originalPrice', $event)"></el-input>
+      </el-form-item>
+      <el-form-item label="市场价（USD）：">
+        <el-input :model-value="compProductParam.translations?.en?.originalPrice" type="number" min="0" @update:model-value="editForeignPrice('en', $event, 'originalPrice')" />
+        <div class="price-conversion-hint">汇率：1 CNY = {{ exchangeRates?.rates.USD || '--' }} USD</div>
+      </el-form-item>
+      <el-form-item label="市场价（EUR）：">
+        <el-input :model-value="compProductParam.translations?.pt?.originalPrice" type="number" min="0" @update:model-value="editForeignPrice('pt', $event, 'originalPrice')" />
+        <div class="price-conversion-hint">汇率：1 CNY = {{ exchangeRates?.rates.EUR || '--' }} EUR</div>
       </el-form-item>
       <el-form-item label="商品库存：">
         <el-input v-model="compProductParam.stock"></el-input>
       </el-form-item>
       <el-form-item label="计量单位：">
         <el-input v-model="compProductParam.unit"></el-input>
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'unit',label:'计量单位-英文/PT'}]" />
       </el-form-item>
       <el-form-item label="商品重量：">
         <el-input v-model="compProductParam.weight" style="width: 300px"></el-input>
@@ -162,7 +235,6 @@ const handleBrandChange = (val: number) => {
       <el-form-item label="排序">
         <el-input v-model="compProductParam.sort"></el-input>
       </el-form-item>
-    <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :fields="[{key:'name',label:'商品名称',maxlength:140},{key:'subTitle',label:'副标题'},{key:'description',label:'商品介绍',type:'textarea'},{key:'keywords',label:'搜索关键词',type:'textarea'},{key:'unit',label:'计量单位'},{key:'price',label:'商品售价（巴西雷亚尔 BRL / R$）',type:'number',hint:'商城切换为葡萄牙语时使用此金额，不会按汇率自动换算。'},{key:'originalPrice',label:'市场价（巴西雷亚尔 BRL / R$）',type:'number',hint:'用于葡萄牙语商城的划线原价。'}]" />
       <el-form-item>
         <div style="width: 100%;text-align: center;">
           <el-button type="primary" @click="handleNext()">下一步，填写商品促销</el-button>
@@ -172,4 +244,9 @@ const handleBrandChange = (val: number) => {
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.price-conversion-hint { margin-top: 6px; color: #8a98a8; font-size: 12px; line-height: 1.7; }
+.foreign-price-row { display:flex; align-items:center; gap:8px; width:100%; margin-top:8px; white-space:nowrap; }
+.foreign-price-row .el-input { width:150px; }
+.foreign-price-row span { color:#8a98a8; font-size:12px; }
+</style>

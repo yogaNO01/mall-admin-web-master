@@ -13,6 +13,7 @@ import MultiUpload from '@/components/Upload/multiUpload.vue'
 import type { ProductAttrPicVo, ProductAttrVo, ProductParamVo } from '@/types/productAttr'
 import type { PmsSkuStock } from '@/types/skuStock'
 import Tinymce from '@/components/Tinymce/index.vue'
+import { autoTranslateAPI } from '@/apis/translation'
 
 // 定义属性
 const props = defineProps({
@@ -30,6 +31,7 @@ const compProductParam = inject('product-key') as Ref<PmsProductParam>
 
 // 模板引用
 const productAttrForm = ref<FormInstance>()
+const translatingColors = reactive<Record<string, boolean>>({})
 
 // 响应式数据
 const state = reactive({
@@ -146,7 +148,7 @@ const getProductAttrList = async (type: number, cid: number) => {
       let options: string[] | undefined = item.inputList?.split(',').filter(Boolean) || []
       let values: string[] = []
       if (props.isEdit) {
-        if (item.handAddStatus === 1) {
+        if (item.handAddStatus === 1 || item.filterType === 1 || isColorSpec(item.name)) {
           // 编辑状态下获取手动添加编辑属性
           options = getEditAttrOptions(item.id!) || options
         }
@@ -237,6 +239,37 @@ watch(() => compProductParam.value.productCategoryId, async (id, previousId) => 
 })
 
 const isColorAttribute = (attribute: ProductAttrVo) => attribute.filterType === 1 || isColorSpec(attribute.name)
+const colorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt', index: number) =>
+  attr.translations?.[language]?.value?.split(',')[index]?.trim() || ''
+const setColorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt', index: number, value: string) => {
+  const names = attr.translations?.[language]?.value?.split(',') || []
+  names[index] = value.replace(/,/g, '，')
+  attr.translations = {
+    ...attr.translations,
+    [language]: { ...attr.translations?.[language], value: names.join(',') }
+  }
+}
+const translateColor = async (attr: ProductAttrVo, index: number, force = false) => {
+  const name = parseProductColor(attr.options?.[index] || '').name.trim()
+  const targets = (['en', 'pt'] as const).filter(language => force || !colorTranslation(attr, language, index))
+  if (!name || !targets.length) return
+  const key = `${attr.id}-${index}`
+  translatingColors[key] = true
+  const previous = Object.fromEntries(targets.map(language => [language, colorTranslation(attr, language, index)]))
+  try {
+    const result = await autoTranslateAPI({ text: name, targetLangs: targets })
+    if (parseProductColor(attr.options?.[index] || '').name !== name) return
+    for (const language of targets) {
+      if (colorTranslation(attr, language, index) === previous[language] && result.data[language]) {
+        setColorTranslation(attr, language, index, result.data[language])
+      }
+    }
+  } catch {
+    // The shared request client reports the error; both fields remain editable.
+  } finally {
+    translatingColors[key] = false
+  }
+}
 const changeColorValue = (index: number, value: string, color: string | null) => {
   if (!color) return
   const attr = state.selectProductAttr[index]!
@@ -254,6 +287,7 @@ const changeColorValue = (index: number, value: string, color: string | null) =>
 
 const addColorValue = (index: number) => {
   const attr = state.selectProductAttr[index]!
+  if (!state.addProductAttrValue.trim()) return ElMessage.warning('请填写颜色名称')
   const value = encodeProductColor(state.addProductAttrValue, state.addProductAttrColor)
   if (attr.options?.includes(value)) return ElMessage.warning('该颜色已存在')
   attr.options ||= []
@@ -261,6 +295,7 @@ const addColorValue = (index: number) => {
   attr.options.push(value)
   attr.values.push(value)
   state.addProductAttrValue = ''
+  void translateColor(attr, attr.options.length - 1)
 }
 
 const getInputListArr = (inputList: string) => {
@@ -293,6 +328,13 @@ const handleRemoveProductAttrValue = (idx: number, index: number) => {
   const attr = state.selectProductAttr[idx]!
   const removed = attr.options?.splice(index, 1)[0]
   attr.values = attr.values?.filter(value => value !== removed)
+  if (isColorAttribute(attr)) {
+    for (const language of ['en', 'pt'] as const) {
+      const names = attr.translations?.[language]?.value?.split(',') || []
+      names.splice(index, 1)
+      attr.translations = { ...attr.translations, [language]: { ...attr.translations?.[language], value: names.join(',') } }
+    }
+  }
 }
 
 const getProductSkuSp = (row: PmsSkuStock, index: number) => {
@@ -405,7 +447,7 @@ const mergeProductAttrValue = () => {
   compProductParam.value.productAttributeValueList = []
   for (let i = 0; i < state.selectProductAttr.length; i++) {
     const attr = state.selectProductAttr[i]!
-    if (attr.handAddStatus === 1 && attr.options != null && attr.options.length > 0) {
+    if ((attr.handAddStatus === 1 || isColorAttribute(attr)) && attr.options != null && attr.options.length > 0) {
       compProductParam.value.productAttributeValueList.push({
         productAttributeId: attr.id,
         value: getOptionStr(attr.options),
@@ -496,13 +538,24 @@ const handleNext = () => {
             {{ productAttr.name }}：
             <div v-if="isColorAttribute(productAttr)" class="color-editor">
               <el-checkbox-group v-model="productAttr.values">
-              <div v-for="item in productAttr.options" :key="item" class="color-option-row">
-                <el-checkbox :value="item">
-                  <span class="color-dot" :style="{ backgroundColor: parseProductColor(item).color }" />
-                  {{ parseProductColor(item).name }}
-                </el-checkbox>
-                <el-color-picker :model-value="parseProductColor(item).color" color-format="hex" @change="changeColorValue(idx, item, $event)" />
-                <el-button link @click="handleRemoveProductAttrValue(idx, productAttr.options!.indexOf(item))">删除</el-button>
+              <div v-for="(item, colorIndex) in productAttr.options" :key="item" class="color-entry">
+                <div class="color-option-row">
+                  <el-checkbox :value="item">
+                    <span class="color-dot" :style="{ backgroundColor: parseProductColor(item).color }" />
+                    {{ parseProductColor(item).name }}
+                  </el-checkbox>
+                  <el-color-picker :model-value="parseProductColor(item).color" color-format="hex" @change="changeColorValue(idx, item, $event)" />
+                  <el-button link @click="handleRemoveProductAttrValue(idx, colorIndex)">删除</el-button>
+                </div>
+                <div class="color-translations">
+                  <el-input :model-value="colorTranslation(productAttr, 'en', colorIndex)" placeholder="英文颜色名称" @update:model-value="setColorTranslation(productAttr, 'en', colorIndex, $event)">
+                    <template #prepend>EN</template>
+                  </el-input>
+                  <el-input :model-value="colorTranslation(productAttr, 'pt', colorIndex)" placeholder="葡语颜色名称" @update:model-value="setColorTranslation(productAttr, 'pt', colorIndex, $event)">
+                    <template #prepend>PT</template>
+                  </el-input>
+                  <el-button :loading="translatingColors[`${productAttr.id}-${colorIndex}`]" @click="translateColor(productAttr, colorIndex, true)">翻译</el-button>
+                </div>
               </div>
               </el-checkbox-group>
               <div class="color-option-row">
@@ -538,16 +591,6 @@ const handleNext = () => {
               {{ getProductSkuSp(scope.row, index) }}
             </template>
           </el-table-column>
-          <el-table-column label="销售价格" width="100" align="center">
-            <template #default="scope">
-              <el-input v-model="scope.row.price"></el-input>
-            </template>
-          </el-table-column>
-          <el-table-column label="促销价格" width="100" align="center">
-            <template #default="scope">
-              <el-input v-model="scope.row.promotionPrice"></el-input>
-            </template>
-          </el-table-column>
           <el-table-column label="商品库存" width="80" align="center">
             <template #default="scope">
               <el-input v-model="scope.row.stock"></el-input>
@@ -572,8 +615,6 @@ const handleNext = () => {
         </el-table>
         <el-button type="primary" style="margin-top: 20px" @click="handleRefreshProductSkuList">刷新列表
         </el-button>
-        <el-button type="primary" style="margin-top: 20px" @click="handleSyncProductSkuPrice">同步价格
-        </el-button>
         <el-button type="primary" style="margin-top: 20px" @click="handleSyncProductSkuStock">同步库存
         </el-button>
       </el-form-item>
@@ -586,17 +627,9 @@ const handleNext = () => {
           </div>
         </el-card>
       </el-form-item>
-      <el-form-item label="规格选项翻译：" v-if="state.selectProductAttr.some(attr => attr.handAddStatus === 1)">
-        <div style="width:100%">
-          <div v-for="attr in state.selectProductAttr.filter(attr => attr.handAddStatus === 1)" :key="attr.id">
-            <text>{{ attr.name }}</text>
-            <multilingual-fields v-model="attr.translations" :source="{ value: attr.options?.join(',') }" :fields="[{ key:'value', label:'葡萄牙语选项', type:'textarea', hint:'与中文选项顺序一一对应，用英文逗号分隔；颜色只填葡萄牙语名称，HEX色值无需翻译。' }]" compact />
-          </div>
-        </div>
-      </el-form-item>
       <el-form-item label="商品参数：">
         <el-card shadow="never" class="cardBg">
-          <div v-for="(item, index) in state.selectProductParam" :class="{ littleMarginTop: index !== 0 }"
+          <div v-for="(item, index) in state.selectProductParam" class="param-row" :class="{ littleMarginTop: index !== 0 }"
             :key="'productParam' + index">
             <div class="paramInputLabel">{{ item.name }}:</div>
             <el-select v-if="item.inputType === 1" class="paramInput" v-model="state.selectProductParam[index]!.value">
@@ -604,7 +637,7 @@ const handleNext = () => {
               </el-option>
             </el-select>
             <el-input v-else class="paramInput" v-model="state.selectProductParam[index]!.value"></el-input>
-            <multilingual-fields v-model="item.translations" :source="item" :fields="[{ key:'value', label:'参数内容', type:'textarea' }]" compact />
+            <multilingual-fields v-model="item.translations" :source="item" :show-chinese="false" :fields="[{ key:'value', label:'参数内容', type:'textarea' }]" />
           </div>
         </el-card>
       </el-form-item>
@@ -615,9 +648,11 @@ const handleNext = () => {
         <el-tabs v-model="state.activeHtmlName" type="card" style="width: 100%;">
           <el-tab-pane label="电脑端详情" name="pc">
             <tinymce :height="720" v-model="compProductParam.detailHtml!" />
+            <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'detailHtml',label:'PC图文详情',type:'html'}]" />
           </el-tab-pane>
           <el-tab-pane label="移动端详情" name="mobile">
             <tinymce :height="720" v-model="compProductParam.detailMobileHtml!" />
+            <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'detailMobileHtml',label:'H5图文详情',type:'html'}]" />
           </el-tab-pane>
         </el-tabs>
       </el-form-item>
@@ -627,13 +662,15 @@ const handleNext = () => {
           <el-button type="primary" @click="handleNext">下一步，选择商品关联</el-button>
         </div>
       </el-form-item>
-    <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :fields="[{key:'detailTitle',label:'详情标题'},{key:'detailDesc',label:'详情描述',type:'textarea'},{key:'detailHtml',label:'PC图文详情',type:'html'},{key:'detailMobileHtml',label:'H5图文详情',type:'html'}]" />
     </el-form>
   </div>
 </template>
 
 <style scoped>
 .color-editor { margin:8px 0 20px; }
+.color-entry { margin:8px 0 16px; padding:10px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; }
+.color-translations { display:flex; align-items:center; gap:8px; margin-left:26px; }
+.color-translations :deep(.el-input) { max-width:230px; }
 .color-option-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
 .color-dot { display:inline-block; width:18px; height:18px; margin-right:6px; border:1px solid #cbd3df; border-radius:50%; vertical-align:middle; }
 .littleMarginLeft {
@@ -645,15 +682,18 @@ const handleNext = () => {
 }
 
 .paramInput {
-  width: 250px;
+  width: 100%;
 }
 
 .paramInputLabel {
-  display: inline-block;
-  width: 100px;
-  text-align: right;
-  padding-right: 10px
+  display: block;
+  margin-bottom: 6px;
+  text-align: left;
+  font-weight: 500;
 }
+
+.param-row { width:100%; }
+.param-row :deep(.multilingual-fields) { width:100%; }
 
 .cardBg {
   background: #F8F9FC;

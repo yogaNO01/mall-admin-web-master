@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '@/utils/http'
 
-type StorefrontText = { code: string; source: string; zh: string; pt: string }
+type StorefrontText = { code: string; source: string; zh: string; en: string; es: string; pt: string }
 const rows = ref<StorefrontText[]>([])
 const loading = ref(false)
 const error = ref(false)
@@ -26,7 +26,7 @@ const save = async () => {
     await http({ url: `/home/advertise/translations/update/${draft.value.code}`, method: 'post', data: draft.value })
     const index = rows.value.findIndex(row => row.code === draft.value?.code)
     if (index >= 0) rows.value[index] = { ...draft.value }
-    draft.value = undefined; ElMessage.success('中葡文案已保存，商城刷新后生效')
+    draft.value = undefined; ElMessage.success('多语言文案已保存，商城刷新后生效')
   } finally { saving.value = false }
 }
 onMounted(load)
@@ -35,12 +35,13 @@ onMounted(load)
 <template>
   <div class="app-container">
     <el-card shadow="never">
-      <h2>商城中葡文案</h2>
+      <h2>商城多语言文案</h2>
       <p class="intro">管理导航、搜索、筛选、首页介绍、服务保障、关于我们、购买流程和常见问题等内容。商品、品牌、分类及规格的翻译在各自编辑页填写。“中国广州商品进出口贸易总会”固定保留中文。</p>
       <div class="copy-tools"><el-input v-model="keyword" placeholder="搜索中文或葡萄牙语内容" clearable @input="page = 1" /><el-checkbox v-model="onlyMissing" @change="page = 1">只看未填写葡萄牙语</el-checkbox><el-button @click="load">刷新</el-button></div>
       <el-alert v-if="error" type="error" title="文案加载失败，请确认后台服务已更新并执行多语言数据库迁移后重试。" :closable="false" />
       <el-table v-loading="loading" :data="visibleRows.slice((page - 1) * 20, page * 20)" border>
         <el-table-column prop="zh" label="中文" min-width="280" show-overflow-tooltip />
+        <el-table-column prop="en" label="英语 · English" min-width="280" show-overflow-tooltip />
         <el-table-column prop="pt" label="葡萄牙语 · Português" min-width="320" show-overflow-tooltip />
         <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="draft = { ...row }">编辑</el-button></template></el-table-column>
       </el-table>
@@ -49,6 +50,7 @@ onMounted(load)
     <el-dialog :model-value="!!draft" title="编辑商城文案" width="700px" @close="draft = undefined">
       <el-form v-if="draft" label-position="top">
         <el-form-item label="中文"><el-input v-model="draft.zh" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" maxlength="20000" /></el-form-item>
+        <el-form-item label="英语 · English"><el-input v-model="draft.en" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" maxlength="20000" /></el-form-item>
         <el-form-item label="葡萄牙语 · Português"><el-input v-model="draft.pt" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" maxlength="20000" /></el-form-item>
         <p class="intro">文案中的 {count}、{keyword} 等占位符请保持完整。葡萄牙语留空时使用系统默认翻译。</p>
       </el-form>

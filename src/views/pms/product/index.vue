@@ -443,13 +443,10 @@ const verifyStatusFilter = (value: number) => {
             <p>品牌：{{ scope.row.brandName }}</p>
           </template>
         </el-table-column>
-        <el-table-column label="中葡价格/货号" width="180" align="center">
-          <template #default="scope">
-            <p>人民币：￥{{ scope.row.price }}</p>
-            <p>雷亚尔：{{ scope.row.translations?.pt?.price ? `R$ ${scope.row.translations.pt.price}` : '未配置' }}</p>
-            <p>货号：{{ scope.row.productSn }}</p>
-          </template>
+        <el-table-column label="售价（CNY）" width="120" align="center">
+          <template #default="scope">￥{{ scope.row.price }}</template>
         </el-table-column>
+        <el-table-column prop="productSn" label="商品货号" min-width="170" align="center" />
         <el-table-column label="标签" width="140" align="center">
           <template #default="scope">
             <p style="margin: 6px 0px;">上架：

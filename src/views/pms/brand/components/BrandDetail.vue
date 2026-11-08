@@ -114,6 +114,7 @@ const handleBrandReset = () => {
     <el-form :model="brand" :rules="rules" ref="brandFromRef" label-width="150px">
       <el-form-item label="品牌名称：" prop="name">
         <el-input v-model="brand.name"></el-input>
+        <multilingual-fields v-model="brand.translations" :source="brand" :show-chinese="false" :fields="[{key:'name',label:'品牌名称'}]" />
       </el-form-item>
       <el-form-item label="品牌首字母：">
         <el-input v-model="brand.firstLetter"></el-input>
@@ -126,6 +127,7 @@ const handleBrandReset = () => {
       </el-form-item>
       <el-form-item label="品牌故事：">
         <el-input placeholder="请输入内容" type="textarea" v-model="brand.brandStory" :autosize="true"></el-input>
+        <multilingual-fields v-model="brand.translations" :source="brand" :show-chinese="false" :fields="[{key:'brandStory',label:'品牌故事',type:'textarea'}]" />
       </el-form-item>
       <el-form-item label="排序：" prop="sort">
         <el-input v-model.number="brand.sort"></el-input>
@@ -146,7 +148,6 @@ const handleBrandReset = () => {
         <el-button type="primary" @click="handleBrandSubmit()">提交</el-button>
         <el-button v-if="!props.isEdit" @click="handleBrandReset()">重置</el-button>
       </el-form-item>
-    <multilingual-fields v-model="brand.translations" :source="brand" :fields="[{key:'name',label:'品牌名称',maxlength:140},{key:'brandStory',label:'品牌故事',type:'textarea'}]" />
     </el-form>
   </el-card>
 </template>

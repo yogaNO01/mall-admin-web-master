@@ -121,6 +121,7 @@ const resetForm = () => {
     <el-form :model="productAttr" :rules="rules" ref="productAttrFrom" label-width="150px">
       <el-form-item label="属性名称：" prop="name">
         <el-input v-model="productAttr.name"></el-input>
+        <multilingual-fields v-model="productAttr.translations" :source="productAttr" :show-chinese="false" :fields="[{key:'name',label:'属性名称'}]" />
       </el-form-item>
       <el-form-item label="商品类型：">
         <el-select v-model="productAttr.productAttributeCategoryId" placeholder="请选择">
@@ -162,6 +163,7 @@ const resetForm = () => {
       </el-form-item>
       <el-form-item label="属性值可选值列表:">
         <el-input :autosize="true" type="textarea" v-model="inputListFormat"></el-input>
+        <multilingual-fields v-model="productAttr.translations" :source="productAttr" :show-chinese="false" :fields="[{key:'inputList',label:'可选值',type:'textarea'}]" />
       </el-form-item>
       <el-form-item label="是否支持手动新增:">
         <el-radio-group v-model="productAttr.handAddStatus">
@@ -176,7 +178,6 @@ const resetForm = () => {
         <el-button type="primary" @click="onSubmit">提交</el-button>
         <el-button v-if="!isEdit" @click="resetForm">重置</el-button>
       </el-form-item>
-    <multilingual-fields v-model="productAttr.translations" :source="productAttr" :fields="[{key:'name',label:'属性名称'},{key:'inputList',label:'可选值',type:'textarea',hint:'按中文可选值顺序填写，用英文逗号分隔。只翻译显示名称，不填写颜色HEX值。数字尺码可保留原值。'}]" />
     </el-form>
   </el-card>
 </template>

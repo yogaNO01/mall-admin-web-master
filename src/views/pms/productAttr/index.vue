@@ -190,8 +190,8 @@ const handleClose = () => {
       <el-form ref="productAttrCatForm" :model="productAttrCate" :rules="rules" label-width="120px">
         <el-form-item label="类型名称" prop="name">
           <el-input v-model="productAttrCate.name" autocomplete="off"></el-input>
-        </el-form-item>
-        <multilingual-fields v-model="productAttrCate.translations" :source="productAttrCate" :fields="[{ key:'name', label:'类型名称' }]" compact />
+          <multilingual-fields v-model="productAttrCate.translations" :source="productAttrCate" :show-chinese="false" :fields="[{key:'name',label:'类型名称'}]" />
+      </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">

@@ -194,6 +194,7 @@ const filterLabelFilter = (index: number) => {
     <el-form ref="productCateFrom" :model="productCate" :rules="rules" label-width="150px">
       <el-form-item label="分类名称：" prop="name">
         <el-input v-model="productCate.name"></el-input>
+        <multilingual-fields v-model="productCate.translations" :source="productCate" :show-chinese="false" :fields="[{key:'name',label:'分类名称'}]" />
       </el-form-item>
       <el-form-item label="上级分类：">
         <el-select v-model="productCate.parentId" placeholder="请选择分类">
@@ -203,6 +204,7 @@ const filterLabelFilter = (index: number) => {
       </el-form-item>
       <el-form-item label="数量单位：">
         <el-input v-model="productCate.productUnit"></el-input>
+        <multilingual-fields v-model="productCate.translations" :source="productCate" :show-chinese="false" :fields="[{key:'productUnit',label:'数量单位'}]" />
       </el-form-item>
       <el-form-item label="排序：">
         <el-input v-model="productCate.sort"></el-input>
@@ -233,15 +235,16 @@ const filterLabelFilter = (index: number) => {
       </el-form-item>
       <el-form-item label="关键词：">
         <el-input v-model="productCate.keywords"></el-input>
+        <multilingual-fields v-model="productCate.translations" :source="productCate" :show-chinese="false" :fields="[{key:'keywords',label:'关键词'}]" />
       </el-form-item>
       <el-form-item label="分类描述：">
         <el-input type="textarea" :autosize="true" v-model="productCate.description"></el-input>
+        <multilingual-fields v-model="productCate.translations" :source="productCate" :show-chinese="false" :fields="[{key:'description',label:'分类描述',type:'textarea'}]" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="onSubmit()">提交</el-button>
         <el-button v-if="!props.isEdit" @click="resetForm()">重置</el-button>
       </el-form-item>
-    <multilingual-fields v-model="productCate.translations" :source="productCate" :fields="[{key:'name',label:'分类名称'},{key:'description',label:'分类描述',type:'textarea'},{key:'keywords',label:'搜索关键词'},{key:'productUnit',label:'数量单位'}]" />
     </el-form>
   </el-card>
 </template>
