@@ -173,11 +173,11 @@ const handleBrandChange = (val: number) => {
       </el-form-item>
       <el-form-item label="商品名称：" prop="name">
         <el-input v-model="compProductParam.name"></el-input>
-        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'name',label:'商品名称-英文/PT',maxlength:140}]" />
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'name',label:'商品名称',maxlength:140}]" />
       </el-form-item>
       <el-form-item label="副标题：" prop="subTitle">
         <el-input v-model="compProductParam.subTitle"></el-input>
-        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'subTitle',label:'副标题-英文/PT'}]" />
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'subTitle',label:'副标题'}]" />
       </el-form-item>
       <el-form-item label="商品品牌：" prop="brandId">
         <el-select v-model="compProductParam.brandId" @change="handleBrandChange" placeholder="请选择品牌">
@@ -188,7 +188,7 @@ const handleBrandChange = (val: number) => {
       <el-form-item label="商品介绍：">
         <el-input :autoSize="true" v-model="compProductParam.description" type="textarea"
           placeholder="请输入内容"></el-input>
-        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'description',label:'商品介绍-英文/PT',type:'textarea'}]" />
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'description',label:'商品介绍',type:'textarea'}]" />
       </el-form-item>
       <el-form-item label="商品货号：">
         <el-input v-model="compProductParam.productSn"></el-input>
@@ -226,7 +226,7 @@ const handleBrandChange = (val: number) => {
       </el-form-item>
       <el-form-item label="计量单位：">
         <el-input v-model="compProductParam.unit"></el-input>
-        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'unit',label:'计量单位-英文/PT'}]" />
+        <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'unit',label:'计量单位'}]" />
       </el-form-item>
       <el-form-item label="商品重量：">
         <el-input v-model="compProductParam.weight" style="width: 300px"></el-input>

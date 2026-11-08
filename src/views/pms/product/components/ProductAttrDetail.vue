@@ -239,9 +239,9 @@ watch(() => compProductParam.value.productCategoryId, async (id, previousId) => 
 })
 
 const isColorAttribute = (attribute: ProductAttrVo) => attribute.filterType === 1 || isColorSpec(attribute.name)
-const colorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt', index: number) =>
+const colorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt' | 'es', index: number) =>
   attr.translations?.[language]?.value?.split(',')[index]?.trim() || ''
-const setColorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt', index: number, value: string) => {
+const setColorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt' | 'es', index: number, value: string) => {
   const names = attr.translations?.[language]?.value?.split(',') || []
   names[index] = value.replace(/,/g, '，')
   attr.translations = {
@@ -251,7 +251,7 @@ const setColorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt', index: 
 }
 const translateColor = async (attr: ProductAttrVo, index: number, force = false) => {
   const name = parseProductColor(attr.options?.[index] || '').name.trim()
-  const targets = (['en', 'pt'] as const).filter(language => force || !colorTranslation(attr, language, index))
+  const targets = (['en', 'pt', 'es'] as const).filter(language => force || !colorTranslation(attr, language, index))
   if (!name || !targets.length) return
   const key = `${attr.id}-${index}`
   translatingColors[key] = true
@@ -329,7 +329,7 @@ const handleRemoveProductAttrValue = (idx: number, index: number) => {
   const removed = attr.options?.splice(index, 1)[0]
   attr.values = attr.values?.filter(value => value !== removed)
   if (isColorAttribute(attr)) {
-    for (const language of ['en', 'pt'] as const) {
+    for (const language of ['en', 'pt', 'es'] as const) {
       const names = attr.translations?.[language]?.value?.split(',') || []
       names.splice(index, 1)
       attr.translations = { ...attr.translations, [language]: { ...attr.translations?.[language], value: names.join(',') } }
@@ -554,6 +554,9 @@ const handleNext = () => {
                   <el-input :model-value="colorTranslation(productAttr, 'pt', colorIndex)" placeholder="葡语颜色名称" @update:model-value="setColorTranslation(productAttr, 'pt', colorIndex, $event)">
                     <template #prepend>PT</template>
                   </el-input>
+                  <el-input :model-value="colorTranslation(productAttr, 'es', colorIndex)" placeholder="西语颜色名称" @update:model-value="setColorTranslation(productAttr, 'es', colorIndex, $event)">
+                    <template #prepend>ES</template>
+                  </el-input>
                   <el-button :loading="translatingColors[`${productAttr.id}-${colorIndex}`]" @click="translateColor(productAttr, colorIndex, true)">翻译</el-button>
                 </div>
               </div>
@@ -669,7 +672,7 @@ const handleNext = () => {
 <style scoped>
 .color-editor { margin:8px 0 20px; }
 .color-entry { margin:8px 0 16px; padding:10px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; }
-.color-translations { display:flex; align-items:center; gap:8px; margin-left:26px; }
+.color-translations { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-left:26px; }
 .color-translations :deep(.el-input) { max-width:230px; }
 .color-option-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
 .color-dot { display:inline-block; width:18px; height:18px; margin-right:6px; border:1px solid #cbd3df; border-radius:50%; vertical-align:middle; }
