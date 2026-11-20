@@ -193,7 +193,7 @@ const handleBrandChange = (val: number) => {
       <el-form-item label="商品货号：">
         <el-input v-model="compProductParam.productSn"></el-input>
       </el-form-item>
-      <el-form-item label="商品售价（CNY）：" label-width="155px">
+      <el-form-item label="商品售价（CNY）：" label-width="155px" required>
         <el-input :model-value="compProductParam.price" @update:model-value="changeCnyPrice('price', $event)"></el-input>
         <div class="price-conversion-hint">
           <template v-if="exchangeRates && !exchangeRateError">
@@ -210,7 +210,7 @@ const handleBrandChange = (val: number) => {
         <el-input :model-value="compProductParam.translations?.pt?.price" type="number" min="0" @update:model-value="editForeignPrice('pt', $event)" />
         <div class="price-conversion-hint">汇率：1 CNY = {{ exchangeRates?.rates.EUR || '--' }} EUR</div>
       </el-form-item>
-      <el-form-item label="市场价（CNY）：">
+      <el-form-item label="市场价（CNY）：" required>
         <el-input :model-value="compProductParam.originalPrice" @update:model-value="changeCnyPrice('originalPrice', $event)"></el-input>
       </el-form-item>
       <el-form-item label="市场价（USD）：">
