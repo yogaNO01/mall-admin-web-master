@@ -10,7 +10,7 @@ import SingleUpload from '@/components/Upload/singleUpload.vue'
 import type { PmsProductParam } from '@/types/product'
 import type { ElSelectDataVo } from '@/types/common'
 import MultiUpload from '@/components/Upload/multiUpload.vue'
-import type { ProductAttrPicVo, ProductAttrVo, ProductParamVo } from '@/types/productAttr'
+import type { ProductAttrVo, ProductParamVo } from '@/types/productAttr'
 import type { PmsSkuStock } from '@/types/skuStock'
 import Tinymce from '@/components/Tinymce/index.vue'
 import { autoTranslateAPI } from '@/apis/translation'
@@ -44,7 +44,6 @@ const state = reactive({
   // 选中的商品参数
   selectProductParam: [] as ProductParamVo[],
   // 选中的商品属性图片
-  selectProductAttrPics: [] as ProductAttrPicVo[],
   // 可手动添加的商品属性
   addProductAttrValue: '',
   addProductAttrColor: '#30486D',
@@ -56,6 +55,21 @@ const state = reactive({
 const productId = computed(() => {
   return compProductParam.value.id
 })
+const defaultSkuStock = ref<number | undefined>(0)
+const stockPreferenceKey = computed(() => productId.value ? `mall:sku-default-stock:${productId.value}` : '')
+watch(stockPreferenceKey, key => {
+  defaultSkuStock.value = key ? Number(localStorage.getItem(key) || 0) : 0
+}, { immediate: true })
+watch(defaultSkuStock, value => {
+  if (stockPreferenceKey.value && value != null && Number.isInteger(value) && value >= 0) {
+    localStorage.setItem(stockPreferenceKey.value, String(value))
+  }
+})
+
+const createSkuCode = () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return 'SKU-' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+}
 
 // 由于compProductParam数据为异步加载，需要监听其变化来初始化数据
 watch(productId, (newVal, oldVal) => {
@@ -80,12 +94,6 @@ onMounted(async () => {
 })
 
 // 是否有商品属性图片
-const hasAttrPic = computed(() => {
-  if (state.selectProductAttrPics.length < 1) {
-    return false
-  }
-  return true
-})
 
 
 // 商品的主图和画册图片
@@ -183,8 +191,8 @@ const getProductAttrList = async (type: number, cid: number) => {
       })
     }
     if (props.isEdit) {
-      // 编辑模式下刷新商品属性图片
-      refreshProductAttrPics()
+      // 根据当前有效规格初始化 SKU 表。
+      refreshProductSkuList()
     }
   } else {
     state.selectProductParam = []
@@ -299,7 +307,6 @@ const changeColorValue = (index: number, value: string, color: string | null) =>
     for (const spec of specs) if (spec.key === attr.name && spec.value === value) spec.value = next
     sku.spData = JSON.stringify(specs)
   }
-  for (const pic of state.selectProductAttrPics) if (pic.name === value) pic.name = next
 }
 
 const addColorValue = (index: number) => {
@@ -364,14 +371,25 @@ const getProductSkuSp = (row: PmsSkuStock, index: number) => {
 }
 
 const handleRefreshProductSkuList = async () => {
+  if (defaultSkuStock.value == null || !Number.isInteger(defaultSkuStock.value) || defaultSkuStock.value < 0) {
+    return ElMessage.warning('默认库存须填写 0 或正整数')
+  }
+  if (!state.selectProductAttr.length || state.selectProductAttr.some(attr => !attr.values?.length)) {
+    ElMessage.warning('请先为每项商品规格至少选择一个选项')
+    return
+  }
+  if (!compProductParam.value.skuStockList?.length) {
+    refreshProductSkuList()
+    return
+  }
   try {
-    await ElMessageBox.confirm('刷新列表将导致sku信息重新生成，是否要刷新', '提示', {
+    const stock = defaultSkuStock.value
+    await ElMessageBox.confirm(`将按当前规格更新 SKU 组合，并把全部组合的库存设为 ${stock}。未选中的组合会移除。`, '更新 SKU 组合', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     })
-    refreshProductAttrPics()
-    refreshProductSkuList()
+    refreshProductSkuList(stock)
   } catch {
     // 用户取消操作
   }
@@ -399,67 +417,31 @@ const handleSyncProductSkuPrice = async () => {
   }
 }
 
-const handleSyncProductSkuStock = async () => {
-  try {
-    await ElMessageBox.confirm('将同步第一个sku的库存到所有sku,是否继续', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    if (compProductParam.value.skuStockList && compProductParam.value.skuStockList.length > 0) {
-      let tempSkuList: PmsSkuStock[] = []
-      tempSkuList = tempSkuList.concat(tempSkuList, compProductParam.value.skuStockList)
-      const stock = compProductParam.value.skuStockList[0]!.stock
-      const lowStock = compProductParam.value.skuStockList[0]!.lowStock
-      for (let i = 0; i < tempSkuList.length; i++) {
-        tempSkuList[i]!.stock = stock
-        tempSkuList[i]!.lowStock = lowStock
-      }
-      compProductParam.value.skuStockList = []
-      compProductParam.value.skuStockList = compProductParam.value.skuStockList.concat(compProductParam.value.skuStockList, tempSkuList)
-    }
-  } catch {
-    // 用户取消操作
-  }
-}
-
-const refreshProductSkuList = () => {
+const refreshProductSkuList = (overwriteStock?: number) => {
   const attrs = state.selectProductAttr
   if (!attrs.length || attrs.some(attr => !attr.values?.length)) return
   const signature = (specs: { key: string; value: string }[]) => JSON.stringify([...specs].sort((a,b) => a.key.localeCompare(b.key)))
   const existing = new Map((compProductParam.value.skuStockList || []).map(sku => [signature(JSON.parse(sku.spData || '[]')), sku]))
   let combinations: { key: string; value: string }[][] = [[]]
   for (const attr of attrs) combinations = combinations.flatMap(items => attr.values!.map(value => [...items, { key: attr.name, value }]))
+  const usedCodes = new Set<string>()
   compProductParam.value.skuStockList = combinations.map(specs => {
     const saved = existing.get(signature(specs))
-    return { price: compProductParam.value.price || 0, stock: 0, lowStock: 5, pic: compProductParam.value.pic, ...saved, spData: JSON.stringify(specs) }
+    const previousCode = saved?.skuCode?.trim()
+    const skuCode = previousCode && !usedCodes.has(previousCode.toLowerCase()) ? previousCode : createSkuCode()
+    usedCodes.add(skuCode.toLowerCase())
+    return {
+      price: compProductParam.value.price || 0,
+      lowStock: 5,
+      pic: compProductParam.value.pic,
+      ...saved,
+      stock: overwriteStock ?? (saved ? saved.stock : defaultSkuStock.value ?? 0),
+      skuCode,
+      spData: JSON.stringify(specs),
+    }
   })
 }
 
-const refreshProductAttrPics = () => {
-  state.selectProductAttrPics = []
-  if (state.selectProductAttr && state.selectProductAttr.length >= 1) {
-    const values = state.selectProductAttr[0]!.values!
-    for (let i = 0; i < values.length; i++) {
-      let pic = undefined
-      if (props.isEdit) {
-        // 编辑状态下获取图片
-        pic = getProductSkuPic(values[i]!)
-      }
-      state.selectProductAttrPics.push({ name: values[i], pic: pic })
-    }
-  }
-}
-
-// 获取商品相关属性的图片
-const getProductSkuPic = (name: string) => {
-  return compProductParam.value.skuStockList?.find(item => {
-    const spData = JSON.parse(item.spData!)
-    return name === spData[0].value
-  })?.pic
-}
-
-// 合并商品属性
 const mergeProductAttrValue = () => {
   compProductParam.value.productAttributeValueList = []
   for (let i = 0; i < state.selectProductAttr.length; i++) {
@@ -483,17 +465,6 @@ const mergeProductAttrValue = () => {
 }
 
 // 合并商品属性图片
-const mergeProductAttrPics = () => {
-  for (let i = 0; i < state.selectProductAttrPics.length; i++) {
-    const skuStockList = compProductParam.value.skuStockList!
-    for (let j = 0; j < skuStockList.length; j++) {
-      const spData = JSON.parse(skuStockList[j]!.spData!)
-      if (spData[0].value === state.selectProductAttrPics[i]!.name) {
-        skuStockList[j]!.pic = state.selectProductAttrPics[i]!.pic
-      }
-    }
-  }
-}
 
 const getOptionStr = (arr: string[]) => {
   let str = ''
@@ -524,16 +495,27 @@ const handlePrev = () => {
 }
 
 const handleNext = () => {
+  if (!compProductParam.value.productAttributeCategoryId) {
+    return ElMessage.warning('请选择属性类型')
+  }
   if (!state.selectProductAttr.length || state.selectProductAttr.some(attr => !attr.values?.length)) {
     return ElMessage.warning('请选择各项商品规格，颜色可使用取色器添加')
   }
+  if (!compProductParam.value.skuStockList?.length) {
+    return ElMessage.warning('请先生成 SKU 组合并确认库存')
+  }
   refreshProductSkuList()
-  if (compProductParam.value.skuStockList?.some(sku => !Number.isFinite(Number(sku.price)) || Number(sku.price) < 0 || !Number.isInteger(Number(sku.stock)) || Number(sku.stock) < 0)) {
-    return ElMessage.warning('请填写有效的 SKU 价格和非负整数库存')
+  if (compProductParam.value.skuStockList.some(sku => !Number.isFinite(Number(sku.price)) || Number(sku.price) < 0)) {
+    return ElMessage.warning('SKU 价格无效，请检查第一步的商品售价')
+  }
+  const invalidStockIndex = compProductParam.value.skuStockList?.findIndex(sku =>
+    sku.stock == null || String(sku.stock).trim() === '' || !Number.isInteger(Number(sku.stock)) || Number(sku.stock) < 0,
+  ) ?? -1
+  if (invalidStockIndex >= 0) {
+    return ElMessage.warning(`请填写第 ${invalidStockIndex + 1} 行 SKU 的商品库存（0 或正整数）`)
   }
   compProductParam.value.stock = (compProductParam.value.skuStockList || []).reduce((total, sku) => total + Number(sku.stock || 0), 0)
   mergeProductAttrValue()
-  mergeProductAttrPics()
   emit('next-step')
 }
 </script>
@@ -541,7 +523,7 @@ const handleNext = () => {
 <template>
   <div style="margin-top: 50px">
     <el-form :model="compProductParam" ref="productAttrForm" label-width="120px" class="form-inner-container">
-      <el-form-item label="属性类型：">
+      <el-form-item label="属性类型：" required>
         <el-select v-model="compProductParam.productAttributeCategoryId" placeholder="请选择属性类型"
           @change="handleProductAttrChange">
           <el-option v-for="item in state.productAttributeCategoryOptions" :key="item.value" :label="item.label"
@@ -549,7 +531,7 @@ const handleNext = () => {
           </el-option>
         </el-select>
       </el-form-item>
-      <el-form-item label="商品规格：">
+      <el-form-item label="商品规格：" required>
         <el-card shadow="never" class="cardBg">
           <div v-for="(productAttr, idx) in state.selectProductAttr" :key="'productAttr' + idx">
             {{ productAttr.name }}：
@@ -604,26 +586,38 @@ const handleNext = () => {
             </div>
           </div>
         </el-card>
-        <el-table style="width: 100%;margin-top: 20px" :data="compProductParam.skuStockList" border>
+      </el-form-item>
+      <el-form-item label="SKU 库存：" required>
+        <div class="sku-editor">
+          <div class="sku-toolbar">
+            <label for="default-sku-stock">默认库存</label>
+            <el-input-number id="default-sku-stock" v-model="defaultSkuStock" :min="0" :precision="0" :max="2147483647" />
+            <span>更新组合时应用到全部库存</span>
+            <el-button type="primary" @click="handleRefreshProductSkuList">
+              {{ compProductParam.skuStockList?.length ? '更新 SKU 组合' : '生成 SKU 组合' }}
+            </el-button>
+          </div>
+        <el-table v-if="compProductParam.skuStockList?.length" :data="compProductParam.skuStockList" border>
           <el-table-column v-for="(item, index) in state.selectProductAttr" :label="item.name" :key="item.id"
             align="center">
             <template #default="scope">
               {{ getProductSkuSp(scope.row, index) }}
             </template>
           </el-table-column>
-          <el-table-column label="商品库存" width="80" align="center">
+          <el-table-column label="商品库存" min-width="100" align="center">
+            <template #header><span class="sku-required">*</span> 商品库存</template>
             <template #default="scope">
               <el-input v-model="scope.row.stock"></el-input>
             </template>
           </el-table-column>
-          <el-table-column label="库存预警值" width="80" align="center">
+          <el-table-column label="库存预警值" min-width="105" align="center">
             <template #default="scope">
               <el-input v-model="scope.row.lowStock"></el-input>
             </template>
           </el-table-column>
           <el-table-column label="SKU编号" width="160" align="center">
             <template #default="scope">
-              <el-input v-model="scope.row.skuCode"></el-input>
+              <el-input :model-value="scope.row.skuCode" readonly />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="80" align="center">
@@ -633,18 +627,7 @@ const handleNext = () => {
             </template>
           </el-table-column>
         </el-table>
-        <el-button type="primary" style="margin-top: 20px" @click="handleRefreshProductSkuList">刷新列表
-        </el-button>
-        <el-button type="primary" style="margin-top: 20px" @click="handleSyncProductSkuStock">同步库存
-        </el-button>
-      </el-form-item>
-      <el-form-item label="属性图片：" v-if="hasAttrPic">
-        <div class="attr-pics">
-          <div v-for="(item, index) in state.selectProductAttrPics" class="attr-pic-row" :key="'productAttrPic' + index">
-            <span class="attr-pic-label">{{ isColorSpec(state.selectProductAttr[0]?.name || '') ? parseProductColor(item.name || '').name : item.name }}:</span>
-            <single-upload compact purpose="product-sku" v-model="item.pic" />
-          </div>
-          <div class="attr-pic-tip">支持 JPG、PNG、GIF，单张最大 2 MB</div>
+          <div v-else class="sku-empty">选好颜色、尺码等规格后，点击「生成 SKU 组合」。</div>
         </div>
       </el-form-item>
       <el-form-item label="商品参数：">
@@ -687,6 +670,12 @@ const handleNext = () => {
 </template>
 
 <style scoped>
+.sku-editor { width: 100%; min-width: 0; }
+.sku-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.sku-toolbar span { flex: 1 1 220px; color: var(--el-text-color-secondary); }
+.sku-toolbar :deep(.el-button + .el-button) { margin-left: 0; }
+.sku-empty { padding: 16px; border: 1px dashed var(--el-border-color); border-radius: 6px; color: var(--el-text-color-secondary); }
+.sku-required { color: var(--el-color-danger); }
 .color-editor { margin:8px 0 20px; }
 .color-entry { margin:8px 0 16px; padding:10px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; }
 .color-translations { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-left:26px; }
@@ -715,16 +704,6 @@ const handleNext = () => {
 .param-row { width:100%; }
 .param-row :deep(.multilingual-fields) { width:100%; }
 
-.attr-pics {
-  max-width: 100%;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  padding: 4px 14px 10px;
-}
-.attr-pic-row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; }
-.attr-pic-row + .attr-pic-row { border-top: 1px solid var(--el-border-color-lighter); }
-.attr-pic-label { min-width: 72px; line-height: 1.4; overflow-wrap: anywhere; }
-.attr-pic-tip { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 
 .cardBg {
   background: #F8F9FC;
