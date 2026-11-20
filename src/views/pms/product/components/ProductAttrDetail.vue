@@ -622,13 +622,13 @@ const handleNext = () => {
         </el-button>
       </el-form-item>
       <el-form-item label="属性图片：" v-if="hasAttrPic">
-        <el-card shadow="never" class="cardBg">
-          <div v-for="(item, index) in state.selectProductAttrPics" :key="'productAttrPic' + index">
-            <span>{{ isColorSpec(state.selectProductAttr[0]?.name || '') ? parseProductColor(item.name || '').name : item.name }}:</span>
-            <single-upload v-model="item.pic"
-              style="width: 300px;display: inline-block;margin-left: 10px"></single-upload>
+        <div class="attr-pics">
+          <div v-for="(item, index) in state.selectProductAttrPics" class="attr-pic-row" :key="'productAttrPic' + index">
+            <span class="attr-pic-label">{{ isColorSpec(state.selectProductAttr[0]?.name || '') ? parseProductColor(item.name || '').name : item.name }}:</span>
+            <single-upload compact purpose="product-sku" v-model="item.pic" />
           </div>
-        </el-card>
+          <div class="attr-pic-tip">支持 JPG、PNG、GIF，单张最大 2 MB</div>
+        </div>
       </el-form-item>
       <el-form-item label="商品参数：">
         <el-card shadow="never" class="cardBg">
@@ -645,16 +645,16 @@ const handleNext = () => {
         </el-card>
       </el-form-item>
       <el-form-item label="商品相册：">
-        <multi-upload v-model="selectProductPics"></multi-upload>
+        <multi-upload purpose="product-gallery" v-model="selectProductPics"></multi-upload>
       </el-form-item>
       <el-form-item label="商品详情：">
         <el-tabs v-model="state.activeHtmlName" type="card" style="width: 100%;">
           <el-tab-pane label="电脑端详情" name="pc">
-            <tinymce :height="720" v-model="compProductParam.detailHtml!" />
+            <tinymce purpose="product-detail-pc" :height="720" v-model="compProductParam.detailHtml!" />
             <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'detailHtml',label:'PC图文详情',type:'html'}]" />
           </el-tab-pane>
           <el-tab-pane label="移动端详情" name="mobile">
-            <tinymce :height="720" v-model="compProductParam.detailMobileHtml!" />
+            <tinymce purpose="product-detail-h5" :height="720" v-model="compProductParam.detailMobileHtml!" />
             <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'detailMobileHtml',label:'H5图文详情',type:'html'}]" />
           </el-tab-pane>
         </el-tabs>
@@ -697,6 +697,17 @@ const handleNext = () => {
 
 .param-row { width:100%; }
 .param-row :deep(.multilingual-fields) { width:100%; }
+
+.attr-pics {
+  max-width: 100%;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  padding: 4px 14px 10px;
+}
+.attr-pic-row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; }
+.attr-pic-row + .attr-pic-row { border-top: 1px solid var(--el-border-color-lighter); }
+.attr-pic-label { min-width: 72px; line-height: 1.4; overflow-wrap: anywhere; }
+.attr-pic-tip { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 
 .cardBg {
   background: #F8F9FC;

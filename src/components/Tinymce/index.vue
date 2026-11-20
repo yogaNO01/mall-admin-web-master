@@ -8,12 +8,11 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import Editor from '@tinymce/tinymce-vue'
-
-// minio上传路径
-const minioUploadUrl = import.meta.env.VITE_BASE_SERVER_URL + import.meta.env.VITE_MINIO_UPLOAD_URL
+import http from '@/utils/http'
 
 interface Props {
   modelValue: string
+  purpose?: string
   disabled?: boolean
   height?: number
   toolbar?: string[]
@@ -40,6 +39,7 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
+  purpose: 'content-image',
   height: 400,
   toolbar: () => [
     'blocks | undo redo remove| bold italic underline strikethrough removeformat | fontselect fontsizeselect formatselect | alignleft aligncenter alignright alignjustify',
@@ -71,6 +71,7 @@ watch(contentValue, (newValue) => {
 })
 
 const initOptions = {
+  convert_urls: false,
   language: 'zh_CN',
   language_url: './tinymce6.8.6/langs/zh_CN.js',
   selector: '#mytextarea',
@@ -90,40 +91,23 @@ const initOptions = {
       line-height: 1.6;
     }
   `,
-  images_upload_handler: (blobInfo: BlobInfo, progress: UploadProgressCallback) => new Promise((resolve, reject) => {
-    // 发起请求上传图片（目前仅支持minio上传）
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', minioUploadUrl)
-    // 上传进度回调
-    xhr.upload.onprogress = (e) => {
-      progress(e.loaded / e.total * 100)
-    }
-    // 上传完成回调
-    xhr.onload = () => {
-      if (xhr.status === 403) {
-        reject('HTTP Error: ' + xhr.status)
-        return
-      }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject('HTTP Error: ' + xhr.status)
-        return
-      }
-      const json = JSON.parse(xhr.responseText)
-      console.log('images_upload:', json)
-      if (!json || json.code !== 200) {
-        reject('上传失败！')
-        return
-      }
-      resolve(json.data.url)
-    }
-    // 上传失败回调
-    xhr.onerror = () => {
-      reject('Image upload failed due to a XHR Transport error. Code: ' + xhr.status)
-    }
+  images_upload_handler: async (blobInfo: BlobInfo, progress: UploadProgressCallback) => {
+    const file = blobInfo.blob()
+    if (file.size > 2 * 1024 * 1024) throw new Error('单张图片不能超过 2 MB')
     const formData = new FormData()
-    formData.append('file', blobInfo.blob(), blobInfo.filename())
-    xhr.send(formData)
-  })
+    formData.append('purpose', props.purpose)
+    formData.append('file', file, blobInfo.filename())
+    const response = await http.post('/media/upload', formData, {
+      timeout: 60_000,
+      onUploadProgress: event => {
+        if (event.total) progress(event.loaded / event.total * 100)
+      },
+    }) as unknown as { code: number; message?: string; data?: { url?: string } }
+    if (response.code !== 200 || !response.data?.url) {
+      throw new Error(response.message || '图片上传失败')
+    }
+    return response.data.url
+  }
 }
 
 const onClick = () => {

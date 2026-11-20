@@ -11,6 +11,18 @@ import { createSvgIconsPlugin } from 'vite-plugin-svg-icons'
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: process.env.MALL_API_ORIGIN ? {
+    proxy: {
+      '/admin-api': { target: process.env.MALL_API_ORIGIN, changeOrigin: true },
+      '/api': { target: process.env.MALL_API_ORIGIN, changeOrigin: true },
+      '/media': { target: process.env.MALL_API_ORIGIN, changeOrigin: true },
+      // 旧商品封面保存在官网的 /static 目录，本地后台预览时从官网开发服务读取。
+      '/static': {
+        target: process.env.MALL_STOREFRONT_ORIGIN || 'http://127.0.0.1:5174',
+        changeOrigin: true,
+      },
+    },
+  } : undefined,
   base: './',
   plugins: [
     vue(),

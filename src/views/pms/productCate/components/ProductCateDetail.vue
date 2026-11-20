@@ -222,7 +222,7 @@ const filterLabelFilter = (index: number) => {
         </el-radio-group>
       </el-form-item>
       <el-form-item label="分类图标：">
-        <single-upload v-model="productCate.icon"></single-upload>
+        <single-upload purpose="category-icon" v-model="productCate.icon"></single-upload>
       </el-form-item>
       <el-form-item v-for="(filterProductAttr, index) in filterProductAttrList" :label="filterLabelFilter(index)"
         :key="filterProductAttr.key">

@@ -8,6 +8,11 @@ import { ElMessage } from 'element-plus'
 
 const props = defineProps<{ modelValue?: ContentTranslations; source?: object; fields: TranslationField[]; compact?: boolean; showChinese?: boolean }>()
 const emit = defineEmits<{ (event: 'update:modelValue', value: ContentTranslations): void }>()
+const detailUploadPurpose = (field: string) => {
+  if (field === 'detailHtml') return 'product-detail-pc'
+  if (field === 'detailMobileHtml') return 'product-detail-h5'
+  return 'content-image'
+}
 const translating = reactive<Record<string, boolean>>({})
 const timers: Record<string, ReturnType<typeof setTimeout>> = {}
 const valueOf = (language: 'en' | 'pt' | 'es', key: string) => props.modelValue?.[language]?.[key] || ''
@@ -65,26 +70,26 @@ onBeforeUnmount(() => Object.values(timers).forEach(timer => clearTimeout(timer)
     <div v-for="field in fields" :key="field.key" class="translation-item">
       <div v-if="showChinese !== false" class="field-label">{{ field.label }} <span v-if="field.hint">{{ field.hint }}</span></div>
       <div v-if="showChinese !== false" class="language-row zh-row"><span class="language-label">中文</span><div class="translation-input">
-        <single-upload v-if="field.type === 'image'" :model-value="sourceOf(field.key)" @update:model-value="setChinese(field.key, $event)" />
-        <tinymce v-else-if="field.type === 'html'" :model-value="sourceOf(field.key)" :height="260" @update:model-value="setChinese(field.key, $event)" />
+        <single-upload purpose="marketing-banner" v-if="field.type === 'image'" :model-value="sourceOf(field.key)" @update:model-value="setChinese(field.key, $event)" />
+        <tinymce :purpose="detailUploadPurpose(field.key)" v-else-if="field.type === 'html'" :model-value="sourceOf(field.key)" :height="260" @update:model-value="setChinese(field.key, $event)" />
         <el-input v-else :model-value="sourceOf(field.key)" :type="field.type === 'textarea' ? 'textarea' : field.type === 'number' ? 'number' : 'text'" :autosize="field.type === 'textarea' ? { minRows: 2, maxRows: 8 } : undefined" :maxlength="field.maxlength" @update:model-value="setChinese(field.key, $event)" />
       </div></div>
       <div v-if="field.type === 'html'" class="html-language-heading">英文详情（EN）</div>
       <div class="language-row" :class="{ 'html-language-row': field.type === 'html' }"><span v-if="field.type !== 'html'" class="language-label">EN</span><div class="translation-input">
-        <tinymce v-if="field.type === 'html'" :model-value="valueOf('en', field.key)" :height="260" @update:model-value="setValue('en', field.key, $event)" />
-        <single-upload v-else-if="field.type === 'image'" :model-value="valueOf('en', field.key)" @update:model-value="setValue('en', field.key, $event)" />
+        <tinymce :purpose="detailUploadPurpose(field.key)" v-if="field.type === 'html'" :model-value="valueOf('en', field.key)" :height="260" @update:model-value="setValue('en', field.key, $event)" />
+        <single-upload purpose="marketing-banner" v-else-if="field.type === 'image'" :model-value="valueOf('en', field.key)" @update:model-value="setValue('en', field.key, $event)" />
         <el-input v-else :model-value="valueOf('en', field.key)" :type="field.type === 'textarea' ? 'textarea' : 'text'" :autosize="field.type === 'textarea' ? { minRows: 2, maxRows: 8 } : undefined" :maxlength="field.maxlength" @update:model-value="setValue('en', field.key, $event)" />
       </div><el-button v-if="field.type !== 'image' && field.type !== 'number'" class="translate-button" size="small" :loading="translating[`${field.key}-en`]" @click="translate(field, 'en', true)">翻译</el-button></div>
       <div v-if="field.type === 'html'" class="html-language-heading">葡语详情（PT）</div>
       <div class="language-row" :class="{ 'html-language-row': field.type === 'html' }"><span v-if="field.type !== 'html'" class="language-label">PT</span><div class="translation-input">
-        <tinymce v-if="field.type === 'html'" :model-value="valueOf('pt', field.key)" :height="260" @update:model-value="setValue('pt', field.key, $event)" />
-        <single-upload v-else-if="field.type === 'image'" :model-value="valueOf('pt', field.key)" @update:model-value="setValue('pt', field.key, $event)" />
+        <tinymce :purpose="detailUploadPurpose(field.key)" v-if="field.type === 'html'" :model-value="valueOf('pt', field.key)" :height="260" @update:model-value="setValue('pt', field.key, $event)" />
+        <single-upload purpose="marketing-banner" v-else-if="field.type === 'image'" :model-value="valueOf('pt', field.key)" @update:model-value="setValue('pt', field.key, $event)" />
         <el-input v-else :model-value="valueOf('pt', field.key)" :type="field.type === 'textarea' ? 'textarea' : 'text'" :autosize="field.type === 'textarea' ? { minRows: 2, maxRows: 8 } : undefined" :maxlength="field.maxlength" @update:model-value="setValue('pt', field.key, $event)" />
       </div><el-button v-if="field.type !== 'image' && field.type !== 'number'" class="translate-button" size="small" :loading="translating[`${field.key}-pt`]" @click="translate(field, 'pt', true)">翻译</el-button></div>
       <div v-if="field.type === 'html'" class="html-language-heading">西语详情（ES）</div>
       <div class="language-row" :class="{ 'html-language-row': field.type === 'html' }"><span v-if="field.type !== 'html'" class="language-label">ES</span><div class="translation-input">
-        <tinymce v-if="field.type === 'html'" :model-value="valueOf('es', field.key)" :height="260" @update:model-value="setValue('es', field.key, $event)" />
-        <single-upload v-else-if="field.type === 'image'" :model-value="valueOf('es', field.key)" @update:model-value="setValue('es', field.key, $event)" />
+        <tinymce :purpose="detailUploadPurpose(field.key)" v-if="field.type === 'html'" :model-value="valueOf('es', field.key)" :height="260" @update:model-value="setValue('es', field.key, $event)" />
+        <single-upload purpose="marketing-banner" v-else-if="field.type === 'image'" :model-value="valueOf('es', field.key)" @update:model-value="setValue('es', field.key, $event)" />
         <el-input v-else :model-value="valueOf('es', field.key)" :type="field.type === 'textarea' ? 'textarea' : 'text'" :autosize="field.type === 'textarea' ? { minRows: 2, maxRows: 8 } : undefined" :maxlength="field.maxlength" @update:model-value="setValue('es', field.key, $event)" />
       </div><el-button v-if="field.type !== 'image' && field.type !== 'number'" class="translate-button" size="small" :loading="translating[`${field.key}-es`]" @click="translate(field, 'es', true)">翻译</el-button></div>
       <span v-if="translating[field.key]" class="translation-status">正在自动翻译空白语言…</span>

@@ -144,7 +144,7 @@ const resetForm = () => {
         </el-radio-group>
       </el-form-item>
       <el-form-item label="广告图片：">
-        <single-upload v-model="homeAdvertise.pic"></single-upload>
+        <single-upload purpose="marketing-banner" v-model="homeAdvertise.pic"></single-upload>
       </el-form-item>
       <el-form-item label="排序：">
         <el-input v-model="homeAdvertise.sort" class="input-width"></el-input>

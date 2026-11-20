@@ -120,10 +120,10 @@ const handleBrandReset = () => {
         <el-input v-model="brand.firstLetter"></el-input>
       </el-form-item>
       <el-form-item label="品牌LOGO：" prop="logo">
-        <single-upload v-model="brand.logo"></single-upload>
+        <single-upload purpose="brand-logo" v-model="brand.logo"></single-upload>
       </el-form-item>
       <el-form-item label="品牌专区大图：">
-        <single-upload v-model="brand.bigPic"></single-upload>
+        <single-upload purpose="brand-banner" v-model="brand.bigPic"></single-upload>
       </el-form-item>
       <el-form-item label="品牌故事：">
         <el-input placeholder="请输入内容" type="textarea" v-model="brand.brandStory" :autosize="true"></el-input>
