@@ -145,7 +145,8 @@ const getProductAttrList = async (type: number, cid: number) => {
     state.selectProductAttr = []
     for (let i = 0; i < list.length; i++) {
       const item = list[i]!
-      let options: string[] | undefined = item.inputList?.split(',').filter(Boolean) || []
+      const dictionaryOptions = item.inputList?.split(',') || []
+      let options = dictionaryOptions.filter(Boolean)
       let values: string[] = []
       if (props.isEdit) {
         if (item.handAddStatus === 1 || item.filterType === 1 || isColorSpec(item.name)) {
@@ -153,7 +154,22 @@ const getProductAttrList = async (type: number, cid: number) => {
           options = getEditAttrOptions(item.id!) || options
         }
         // 编辑状态下获取选中属性
-        values = getEditAttrValues(item.name)
+        values = getEditAttrValues(item.name).filter(value => options.includes(value))
+      }
+      const savedTranslations = compProductParam.value.productAttributeValueList?.find(value => value.productAttributeId === item.id)?.translations
+      const translations = { ...savedTranslations }
+      if (item.filterType === 1 || isColorSpec(item.name)) {
+        for (const language of ['en', 'pt', 'es'] as const) {
+          const dictionaryNames = item.translations?.[language]?.inputList?.split(',') || []
+          const savedNames = savedTranslations?.[language]?.value?.split(',') || []
+          const names = options.map((option, index) => {
+            const dictionaryIndex = dictionaryOptions.findIndex(entry =>
+              parseProductColor(entry).name.trim() === parseProductColor(option).name.trim(),
+            )
+            return dictionaryNames[dictionaryIndex]?.split('|')[0]?.trim() || savedNames[index] || ''
+          })
+          translations[language] = { ...savedTranslations?.[language], value: names.join(',') }
+        }
       }
       state.selectProductAttr.push({
         id: item.id,
@@ -161,7 +177,7 @@ const getProductAttrList = async (type: number, cid: number) => {
         handAddStatus: item.handAddStatus,
         inputList: item.inputList,
         filterType: item.filterType,
-        translations: compProductParam.value.productAttributeValueList?.find(value => value.productAttributeId === item.id)?.translations,
+        translations,
         values: values,
         options: options
       })
@@ -249,10 +265,11 @@ const setColorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt' | 'es', 
     [language]: { ...attr.translations?.[language], value: names.join(',') }
   }
 }
-const translateColor = async (attr: ProductAttrVo, index: number, force = false) => {
+const translateColor = async (attr: ProductAttrVo, index: number) => {
   const name = parseProductColor(attr.options?.[index] || '').name.trim()
-  const targets = (['en', 'pt', 'es'] as const).filter(language => force || !colorTranslation(attr, language, index))
-  if (!name || !targets.length) return
+  const targets = (['en', 'pt', 'es'] as const).filter(language => !colorTranslation(attr, language, index))
+  if (!name) return
+  if (!targets.length) return ElMessage.info('颜色译文已齐全')
   const key = `${attr.id}-${index}`
   translatingColors[key] = true
   const previous = Object.fromEntries(targets.map(language => [language, colorTranslation(attr, language, index)]))
@@ -557,7 +574,7 @@ const handleNext = () => {
                   <el-input :model-value="colorTranslation(productAttr, 'es', colorIndex)" placeholder="西语颜色名称" @update:model-value="setColorTranslation(productAttr, 'es', colorIndex, $event)">
                     <template #prepend>ES</template>
                   </el-input>
-                  <el-button :loading="translatingColors[`${productAttr.id}-${colorIndex}`]" @click="translateColor(productAttr, colorIndex, true)">翻译</el-button>
+                  <el-button :loading="translatingColors[`${productAttr.id}-${colorIndex}`]" @click="translateColor(productAttr, colorIndex)">补齐译文</el-button>
                 </div>
               </div>
               </el-checkbox-group>
