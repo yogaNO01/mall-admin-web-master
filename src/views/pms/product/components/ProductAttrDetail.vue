@@ -93,7 +93,33 @@ onMounted(async () => {
   await getProductAttrCateList()
 })
 
-// 是否有商品属性图片
+const hasColorSpec = computed(() => state.selectProductAttr.some(attr => isColorAttribute(attr)))
+
+const colorAlbums = computed<Record<string, string[]>>(() => {
+  try {
+    const data: unknown = JSON.parse(compProductParam.value.translations?.zh?.colorAlbums || '{}')
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
+    return Object.fromEntries(Object.entries(data).filter(([, urls]) =>
+      Array.isArray(urls) && urls.every(url => typeof url === 'string'),
+    ))
+  } catch {
+    return {}
+  }
+})
+
+const saveColorAlbums = (albums: Record<string, string[]>) => {
+  const translations = compProductParam.value.translations
+  compProductParam.value.translations = {
+    ...translations,
+    zh: { ...translations?.zh, colorAlbums: JSON.stringify(albums) },
+  }
+}
+
+const setColorAlbum = (color: string, images: string[]) => {
+  const albums = { ...colorAlbums.value, [color]: images.slice(0, 10) }
+  if (!images.length) delete albums[color]
+  saveColorAlbums(albums)
+}
 
 
 // 商品的主图和画册图片
@@ -300,6 +326,11 @@ const changeColorValue = (index: number, value: string, color: string | null) =>
   const attr = state.selectProductAttr[index]!
   const next = encodeProductColor(parseProductColor(value).name, color)
   if (next !== value && attr.options?.includes(next)) return ElMessage.warning('该颜色已存在')
+  if (next !== value && colorAlbums.value[value]?.length) {
+    const albums = { ...colorAlbums.value, [next]: colorAlbums.value[value]! }
+    delete albums[value]
+    saveColorAlbums(albums)
+  }
   attr.options = attr.options?.map(option => option === value ? next : option)
   attr.values = attr.values?.map(option => option === value ? next : option)
   for (const sku of compProductParam.value.skuStockList || []) {
@@ -501,6 +532,10 @@ const handleNext = async () => {
   if (!state.selectProductAttr.length || state.selectProductAttr.some(attr => !attr.values?.length)) {
     return ElMessage.warning('请选择各项商品规格，颜色可使用取色器添加')
   }
+  if (hasColorSpec.value && !compProductParam.value.pic?.trim()) {
+    document.getElementById('product-default-cover')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    return ElMessage.warning('请先上传默认封面')
+  }
   if (!compProductParam.value.skuStockList?.length) {
     return ElMessage.warning('请先生成 SKU 组合并确认库存')
   }
@@ -531,6 +566,12 @@ const handleNext = async () => {
           </el-option>
         </el-select>
       </el-form-item>
+      <el-form-item v-if="hasColorSpec" id="product-default-cover" label="默认封面：" required>
+        <div>
+          <single-upload class="default-cover-upload" compact purpose="product-gallery" v-model="compProductParam.pic" />
+          <div class="cover-tip">用于官网商品卡片。颜色没有相册时，详情页优先展示此封面。</div>
+        </div>
+      </el-form-item>
       <el-form-item label="商品规格：" required>
         <el-card shadow="never" class="cardBg">
           <div v-for="(productAttr, idx) in state.selectProductAttr" :key="'productAttr' + idx">
@@ -546,7 +587,10 @@ const handleNext = async () => {
                   <el-color-picker :model-value="parseProductColor(item).color" color-format="hex" @change="changeColorValue(idx, item, $event)" />
                   <el-button link @click="handleRemoveProductAttrValue(idx, colorIndex)">删除</el-button>
                 </div>
-                <div class="color-translations">
+                <div class="color-entry-panels">
+                <details class="color-panel">
+                  <summary>多语言名称</summary>
+                  <div class="color-translations">
                   <el-input :model-value="colorTranslation(productAttr, 'en', colorIndex)" placeholder="英文颜色名称" @update:model-value="setColorTranslation(productAttr, 'en', colorIndex, $event)">
                     <template #prepend>EN</template>
                   </el-input>
@@ -557,6 +601,18 @@ const handleNext = async () => {
                     <template #prepend>ES</template>
                   </el-input>
                   <el-button :loading="translatingColors[`${productAttr.id}-${colorIndex}`]" @click="translateColor(productAttr, colorIndex)">补齐译文</el-button>
+                  </div>
+                </details>
+                <details v-if="productAttr.values?.includes(item)" class="color-panel">
+                  <summary>颜色相册（选填）
+                    <span class="color-album-count">{{ colorAlbums[item]?.length || 0 }}/10</span>
+                  </summary>
+                  <div class="color-album">
+                    <p>支持 JPG、PNG、GIF，单张最大 2 MB</p>
+                    <multi-upload purpose="product-gallery" :max-count="10" :model-value="colorAlbums[item] || []"
+                      @update:model-value="setColorAlbum(item, $event)" />
+                  </div>
+                </details>
                 </div>
               </div>
               </el-checkbox-group>
@@ -644,7 +700,7 @@ const handleNext = async () => {
           </div>
         </el-card>
       </el-form-item>
-      <el-form-item label="商品相册：">
+      <el-form-item v-if="!hasColorSpec" label="商品相册：">
         <multi-upload purpose="product-gallery" v-model="selectProductPics"></multi-upload>
       </el-form-item>
       <el-form-item label="商品详情：">
@@ -661,6 +717,18 @@ const handleNext = async () => {
 </template>
 
 <style scoped>
+.default-cover-upload :deep(.compact-preview) { width: 96px; height: 96px; }
+.cover-tip { margin-top: 6px; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.color-entry-panels { margin-top: 8px; border-top: 1px solid var(--el-border-color-lighter); }
+.color-panel + .color-panel { border-top: 1px solid var(--el-border-color-lighter); }
+.color-panel summary { cursor: pointer; padding: 8px 4px; font-size: 13px; line-height: 1.5; }
+.color-panel summary:hover { color: var(--el-color-primary); }
+.color-album-count { margin-left: 8px; font-variant-numeric: tabular-nums; color: var(--el-text-color-secondary); }
+.color-album { display: grid; gap: 10px; padding: 4px 4px 10px; line-height: 1.5; }
+.color-album p { margin: 0; font-size: 12px; color: var(--el-text-color-secondary); }
+.color-album :deep(.el-upload-list--picture-card) { margin: 0; }
+.color-album :deep(.el-upload-list--picture-card) { --el-upload-list-picture-card-size: 76px; }
+.color-album :deep(.el-upload--picture-card) { --el-upload-picture-card-size: 76px; }
 .sku-editor { width: 100%; min-width: 0; }
 .sku-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .sku-toolbar span { flex: 1 1 220px; color: var(--el-text-color-secondary); }
@@ -669,8 +737,8 @@ const handleNext = async () => {
 .sku-required { color: var(--el-color-danger); }
 .color-editor { margin:8px 0 20px; }
 .color-entry { margin:8px 0 16px; padding:10px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; }
-.color-translations { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-left:26px; }
-.color-translations :deep(.el-input) { max-width:230px; }
+.color-translations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); align-items: center; gap: 8px; padding: 4px 4px 10px; }
+.color-translations > .el-button { justify-self: start; }
 .color-option-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
 .color-dot { display:inline-block; width:18px; height:18px; margin-right:6px; border:1px solid #cbd3df; border-radius:50%; vertical-align:middle; }
 .littleMarginLeft {

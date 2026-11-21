@@ -4,6 +4,7 @@ import http from '@/utils/http'
 import { Plus } from '@element-plus/icons-vue'
 import {
   ElMessage,
+  type UploadInstance,
   type UploadProps,
   type UploadRequestOptions,
   type UploadUserFile,
@@ -31,6 +32,7 @@ const emit = defineEmits(['update:modelValue'])
 const dialogVisible = ref(false)
 // 上传文件列表
 const fileList = ref<UploadUserFile[]>([])
+const uploadRef = ref<UploadInstance>()
 
 const uploadRequest = ({ file, onProgress }: UploadRequestOptions) => {
   const formData = new FormData()
@@ -88,7 +90,7 @@ const handlePreview: UploadProps['onPreview'] = file => {
 }
 
 // 处理图片上传成功
-const handleUploadSuccess: UploadProps['onSuccess'] = (res, file, files) => {
+const handleUploadSuccess: UploadProps['onSuccess'] = (res, file) => {
   if (res?.code !== 200 || !res.data?.url) {
     file.status = 'fail'
     ElMessage({
@@ -99,14 +101,18 @@ const handleUploadSuccess: UploadProps['onSuccess'] = (res, file, files) => {
     return
   }
   const url: string = res.data.url
-  file.url = url
-  emitInput(savedUrls(files))
+  const entry = fileList.value.find(item => item.uid === file.uid)
+  if (!entry) return
+  entry.url = url
+  entry.status = 'success'
+  emitInput(savedUrls(fileList.value))
 }
 </script>
 
 <template>
   <div>
     <el-upload
+      ref="uploadRef"
       :before-upload="file => {
         if (file.size <= 2 * 1024 * 1024) return true
         ElMessage.error('单张图片不能超过 2 MB')
@@ -124,11 +130,34 @@ const handleUploadSuccess: UploadProps['onSuccess'] = (res, file, files) => {
       <el-icon>
         <Plus />
       </el-icon>
+      <template #file="{ file }">
+        <div class="album-tile">
+          <button type="button" class="album-preview" aria-label="预览图片"
+            :disabled="!file.url" @click.stop="handlePreview(file)">
+            <el-image v-if="file.url" :src="file.url" fit="cover" class="album-thumbnail">
+              <template #error><span class="album-feedback">图片加载失败</span></template>
+            </el-image>
+            <span v-else class="album-feedback">上传中</span>
+          </button>
+          <el-button class="album-remove" size="small" circle aria-label="移除图片"
+            @click.stop="uploadRef?.handleRemove(file)">×</el-button>
+        </div>
+      </template>
     </el-upload>
-    <el-dialog v-model="dialogVisible">
-      <img :src="dialogImageUrl" alt="" />
+    <el-dialog v-model="dialogVisible" title="图片预览" width="min(840px, 90vw)" append-to-body>
+      <el-image v-if="dialogVisible" :src="dialogImageUrl" fit="contain" class="album-full-image">
+        <template #error><span>图片无法加载，请检查图片地址或重新上传。</span></template>
+      </el-image>
     </el-dialog>
   </div>
 </template>
 
-<style></style>
+<style scoped>
+.album-tile, .album-preview, .album-thumbnail { width: 100%; height: 100%; }
+.album-tile { position: relative; }
+.album-preview { display: block; padding: 0; border: 0; background: var(--el-fill-color-light); cursor: zoom-in; }
+.album-feedback { display: grid; place-items: center; height: 100%; font-size: 11px; color: var(--el-text-color-secondary); }
+.album-remove { position: absolute; top: 4px; right: 4px; }
+.album-full-image { display: block; width: 100%; max-height: 68vh; }
+.album-full-image :deep(img) { max-height: 68vh; }
+</style>

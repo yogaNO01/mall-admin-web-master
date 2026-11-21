@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { Delete, Refresh } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import {
   ElMessage,
@@ -89,12 +90,13 @@ const handleUploadSuccess: UploadProps['onSuccess'] = (res) => {
 </script>
 
 <template>
-  <div class="single-image-upload" :class="{ 'is-compact': compact }">
+  <div class="single-image-upload" :class="{ 'is-compact': compact, 'has-cover': compact && modelValue }">
     <button v-if="compact && modelValue" type="button" class="compact-preview"
       aria-label="预览图片" @click="dialogVisible = true">
       <img :src="modelValue" alt="" />
     </button>
     <el-upload
+      :class="{ 'cover-replace': compact && modelValue }"
       :before-upload="file => {
         if (file.size <= 2 * 1024 * 1024) return true
         ElMessage.error('单张图片不能超过 2 MB')
@@ -110,17 +112,18 @@ const handleUploadSuccess: UploadProps['onSuccess'] = (res) => {
       :on-success="handleUploadSuccess"
       :on-preview="handlePreview"
     >
-      <el-button size="small" :type="compact && modelValue ? undefined : 'primary'">
-        {{ compact ? (modelValue ? '更换图片' : '上传图片') : '点击上传' }}
+      <el-button v-if="compact && modelValue" class="cover-action" :icon="Refresh" circle
+        aria-label="更换图片" title="更换图片" />
+      <el-button v-else size="small" type="primary">
+        {{ compact ? '上传图片' : '点击上传' }}
       </el-button>
       <template v-if="!compact" #tip>
         <div class="el-upload__tip">支持 JPG、PNG、GIF，单张最大 2 MB</div>
       </template>
     </el-upload>
-    <el-button v-if="compact && modelValue" size="small" link type="danger" @click="emitInput('')">
-      移除
-    </el-button>
-    <el-dialog v-model="dialogVisible">
+    <el-button v-if="compact && modelValue" class="cover-action cover-remove" :icon="Delete" circle
+      aria-label="移除图片" title="移除图片" @click="emitInput('')" />
+    <el-dialog v-model="dialogVisible" append-to-body>
       <img width="100%" :src="fileList[0]?.url" alt="" />
     </el-dialog>
   </div>
@@ -128,6 +131,35 @@ const handleUploadSuccess: UploadProps['onSuccess'] = (res) => {
 
 <style scoped>
 .is-compact { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.has-cover { display: inline-flex; position: relative; }
+.has-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 38%);
+  opacity: 0;
+  pointer-events: none;
+}
+.cover-replace, .cover-remove {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.cover-replace { right: calc(50% + 2px); transform: translateY(-50%); line-height: 0; }
+.cover-remove { left: calc(50% + 2px); transform: translateY(-50%); margin: 0; }
+.has-cover:hover::after, .has-cover:focus-within::after,
+.has-cover:hover .cover-replace, .has-cover:focus-within .cover-replace,
+.has-cover:hover .cover-remove, .has-cover:focus-within .cover-remove { opacity: 1; }
+.has-cover:hover .cover-replace, .has-cover:focus-within .cover-replace,
+.has-cover:hover .cover-remove, .has-cover:focus-within .cover-remove { pointer-events: auto; }
+.cover-action { width: 24px; height: 24px; padding: 0; }
+@media (hover: none) {
+  .has-cover::after, .has-cover .cover-replace, .has-cover .cover-remove { opacity: 1; pointer-events: auto; }
+  .has-cover::after { pointer-events: none; }
+}
 .compact-preview {
   width: 56px;
   height: 56px;
