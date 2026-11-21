@@ -12,7 +12,7 @@ import type { ElSelectDataVo } from '@/types/common'
 import MultiUpload from '@/components/Upload/multiUpload.vue'
 import type { ProductAttrVo, ProductParamVo } from '@/types/productAttr'
 import type { PmsSkuStock } from '@/types/skuStock'
-import Tinymce from '@/components/Tinymce/index.vue'
+import UnifiedProductDetails from './UnifiedProductDetails.vue'
 import { autoTranslateAPI } from '@/apis/translation'
 
 // 定义属性
@@ -47,9 +47,9 @@ const state = reactive({
   // 可手动添加的商品属性
   addProductAttrValue: '',
   addProductAttrColor: '#30486D',
-  // 商品富文本详情激活类型
-  activeHtmlName: 'pc'
 })
+
+const unifiedDetails = ref<InstanceType<typeof UnifiedProductDetails>>()
 
 // 商品的ID
 const productId = computed(() => {
@@ -494,7 +494,7 @@ const handlePrev = () => {
   emit('prev-step')
 }
 
-const handleNext = () => {
+const handleNext = async () => {
   if (!compProductParam.value.productAttributeCategoryId) {
     return ElMessage.warning('请选择属性类型')
   }
@@ -516,7 +516,7 @@ const handleNext = () => {
   }
   compProductParam.value.stock = (compProductParam.value.skuStockList || []).reduce((total, sku) => total + Number(sku.stock || 0), 0)
   mergeProductAttrValue()
-  emit('next-step')
+  if (await unifiedDetails.value?.prepare()) emit('next-step')
 }
 </script>
 
@@ -648,16 +648,7 @@ const handleNext = () => {
         <multi-upload purpose="product-gallery" v-model="selectProductPics"></multi-upload>
       </el-form-item>
       <el-form-item label="商品详情：">
-        <el-tabs v-model="state.activeHtmlName" type="card" style="width: 100%;">
-          <el-tab-pane label="电脑端详情" name="pc">
-            <tinymce purpose="product-detail-pc" :height="720" v-model="compProductParam.detailHtml!" />
-            <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'detailHtml',label:'PC图文详情',type:'html'}]" />
-          </el-tab-pane>
-          <el-tab-pane label="移动端详情" name="mobile">
-            <tinymce purpose="product-detail-h5" :height="720" v-model="compProductParam.detailMobileHtml!" />
-            <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'detailMobileHtml',label:'H5图文详情',type:'html'}]" />
-          </el-tab-pane>
-        </el-tabs>
+        <unified-product-details ref="unifiedDetails" :product="compProductParam" />
       </el-form-item>
       <el-form-item>
         <div style="width: 100%; text-align: center;">
