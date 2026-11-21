@@ -80,16 +80,6 @@ const handleSelectionChange = (val: PmsBrand[]) => {
   multipleSelection.value = val
 }
 
-// 获取产品列表
-const getProductList = (index: number, row: PmsBrand) => {
-  console.log(index, row)
-}
-
-// 获取产品评论列表
-const getProductCommentList = (index: number, row: PmsBrand) => {
-  console.log(index, row)
-}
-
 // 处理厂商状态变化
 const handleFactoryStatusChange = async (index: number, row: PmsBrand) => {
 
@@ -237,14 +227,9 @@ const handleBatchOperate = async () => {
             </el-switch>
           </template>
         </el-table-column>
-        <el-table-column label="相关" width="220" align="center">
+        <el-table-column label="商品数量" width="120" align="center">
           <template #default="scope">
-            <span>商品：</span>
-            <el-button size="small" type="primary" link @click="getProductList(scope.$index, scope.row)">100
-            </el-button>
-            <span>评价：</span>
-            <el-button size="small" type="primary" link @click="getProductCommentList(scope.$index, scope.row)">1000
-            </el-button>
+            {{ scope.row.productCount ?? '—' }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200" align="center">
