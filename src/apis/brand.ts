@@ -9,6 +9,7 @@ export function getBrandListAPI(params: PageParam) {
   return http<CommonPage<PmsBrand>>({
     url: '/brand/list',
     method: 'get',
+    timeout: 20_000,
     params: params,
   })
 }

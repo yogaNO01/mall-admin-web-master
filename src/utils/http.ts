@@ -6,7 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 // 创建axios实例
 const http = axios.create({
   baseURL: import.meta.env.VITE_BASE_SERVER_URL,
-  timeout: 5000,
+  timeout: 20_000,
 })
 
 // axios请求拦截器
@@ -54,10 +54,11 @@ http.interceptors.response.use(
     }
   },
   error => {
-    // 全局处理异常请求
-    console.log('error' + error)
+    const isTimeout = axios.isAxiosError(error) &&
+      (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT')
+    const path = isTimeout ? error.config?.url?.split('?')[0] : undefined
     ElMessage({
-      message: error.message,
+      message: isTimeout ? `请求超时${path ? `（${path}）` : ''}，请稍后重试` : error.message,
       type: 'error',
       duration: 3 * 1000,
     })

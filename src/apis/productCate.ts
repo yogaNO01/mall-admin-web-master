@@ -9,6 +9,7 @@ export function getProductCategoryListWithChildrenAPI() {
   return http<PmsProductCategoryExt[]>({
     url: '/productCategory/list/withChildren',
     method: 'get',
+    timeout: 20_000,
   })
 }
 

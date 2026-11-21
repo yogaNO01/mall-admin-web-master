@@ -9,6 +9,7 @@ export function getProductListAPI(params: ProductQueryParam) {
   return http<CommonPage<PmsProduct>>({
     url: '/product/list',
     method: 'get',
+    timeout: 20_000,
     params: params,
   })
 }
