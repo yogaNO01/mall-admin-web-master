@@ -92,7 +92,7 @@ const handlePreview: UploadProps['onPreview'] = file => {
 // 处理图片上传成功
 const handleUploadSuccess: UploadProps['onSuccess'] = (res, file) => {
   if (res?.code !== 200 || !res.data?.url) {
-    file.status = 'fail'
+    uploadRef.value?.handleRemove(file)
     ElMessage({
       message: res?.message || '文件上传失败',
       type: 'error',
@@ -122,7 +122,10 @@ const handleUploadSuccess: UploadProps['onSuccess'] = (res, file) => {
       :on-error="() => ElMessage.error('图片上传请求失败')"
       list-type="picture-card"
       v-model:file-list="fileList"
+      multiple
+      :class="{ 'album-at-limit': fileList.length >= maxCount }"
       :limit="maxCount"
+      :on-exceed="() => ElMessage.warning(`本次选择超过剩余名额，相册最多上传 ${maxCount} 张`)"
       :on-remove="handleRemove"
       :on-success="handleUploadSuccess"
       :on-preview="handlePreview"
@@ -153,6 +156,7 @@ const handleUploadSuccess: UploadProps['onSuccess'] = (res, file) => {
 </template>
 
 <style scoped>
+.album-at-limit :deep(.el-upload--picture-card) { display: none; }
 .album-tile, .album-preview, .album-thumbnail { width: 100%; height: 100%; }
 .album-tile { position: relative; }
 .album-preview { display: block; padding: 0; border: 0; background: var(--el-fill-color-light); cursor: zoom-in; }
