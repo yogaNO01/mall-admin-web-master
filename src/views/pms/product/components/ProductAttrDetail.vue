@@ -259,6 +259,11 @@ watch(() => compProductParam.value.productCategoryId, async (id, previousId) => 
 })
 
 const isColorAttribute = (attribute: ProductAttrVo) => attribute.filterType === 1 || isColorSpec(attribute.name)
+const colorLanguages = [
+  { code: 'en', label: '英文', badge: 'EN' },
+  { code: 'pt', label: '葡语', badge: 'PT' },
+  { code: 'es', label: '西语', badge: 'ES' },
+] as const
 const colorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt' | 'es', index: number) =>
   attr.translations?.[language]?.value?.split(',')[index]?.trim() || ''
 const setColorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt' | 'es', index: number, value: string) => {
@@ -484,7 +489,18 @@ const handleNext = async () => {
     return ElMessage.warning('请选择属性类型')
   }
   if (!state.selectProductAttr.length || state.selectProductAttr.some(attr => !attr.values?.length)) {
-    return ElMessage.warning('请选择各项商品规格，颜色可使用取色器添加')
+    return ElMessage.warning('请选择各项商品规格')
+  }
+  for (const attr of state.selectProductAttr.filter(isColorAttribute)) {
+    for (const value of attr.values || []) {
+      const name = parseProductColor(value).name.trim()
+      const index = attr.options?.indexOf(value) ?? -1
+      if (!name) return ElMessage.warning('请填写中文颜色名称')
+      const missing = colorLanguages.filter(({ code }) => !colorTranslation(attr, code, index))
+      if (missing.length) {
+        return ElMessage.warning(`请补齐「${name}」的${missing.map(({ label }) => label).join('、')}颜色名称`)
+      }
+    }
   }
   if (!compProductParam.value.skuStockList?.length) {
     return ElMessage.warning('请先生成 SKU 组合并确认库存')
@@ -531,14 +547,16 @@ const handleNext = async () => {
                 </div>
                 <div class="color-entry-panels">
                   <div class="color-translations">
-                  <el-input :model-value="colorTranslation(productAttr, 'en', colorIndex)" placeholder="英文颜色名称" @update:model-value="setColorTranslation(productAttr, 'en', colorIndex, $event)">
-                    <template #prepend>EN</template>
-                  </el-input>
-                  <el-input :model-value="colorTranslation(productAttr, 'pt', colorIndex)" placeholder="葡语颜色名称" @update:model-value="setColorTranslation(productAttr, 'pt', colorIndex, $event)">
-                    <template #prepend>PT</template>
-                  </el-input>
-                  <el-input :model-value="colorTranslation(productAttr, 'es', colorIndex)" placeholder="西语颜色名称" @update:model-value="setColorTranslation(productAttr, 'es', colorIndex, $event)">
-                    <template #prepend>ES</template>
+                  <el-input
+                    v-for="{ code, label, badge } in colorLanguages"
+                    :key="code"
+                    :model-value="colorTranslation(productAttr, code, colorIndex)"
+                    :placeholder="`${label}颜色名称`"
+                    :aria-label="`${parseProductColor(item).name}：${label}颜色名称`"
+                    :aria-required="productAttr.values?.includes(item)"
+                    @update:model-value="setColorTranslation(productAttr, code, colorIndex, $event)"
+                  >
+                    <template #prepend><span v-if="productAttr.values?.includes(item)" class="sku-required" aria-hidden="true">* </span>{{ badge }}</template>
                   </el-input>
                   <el-button :loading="translatingColors[`${productAttr.id}-${colorIndex}`]" @click="translateColor(productAttr, colorIndex)">补齐译文</el-button>
                   </div>
