@@ -56,6 +56,49 @@ const getProductCateList = async () => {
 const brandOptions = ref<ElSelectDataVo[]>([])
 const exchangeRates = ref<ExchangeRateResponse | null>(null)
 const exchangeRateError = ref(false)
+type ProductGrade = '7A' | '10A' | '12A'
+type GradePrice = {
+  grade: ProductGrade
+  enabled: boolean
+  cny: string
+  usd: string
+  eur: string
+  usdManual: boolean
+  eurManual: boolean
+}
+const productGrades: ProductGrade[] = ['7A', '10A', '12A']
+const gradePrices = ref<GradePrice[]>([])
+const emptyGradePrices = (): GradePrice[] => productGrades.map((grade, index) => ({
+  grade,
+  enabled: index === 0,
+  cny: index === 0 ? String(compProductParam.value.price ?? 0) : '',
+  usd: index === 0 ? String(compProductParam.value.translations?.en?.price || '') : '',
+  eur: index === 0 ? String(compProductParam.value.translations?.pt?.price || '') : '',
+  usdManual: compProductParam.value.translations?.en?.priceManual === 'true',
+  eurManual: compProductParam.value.translations?.pt?.priceManual === 'true',
+}))
+const loadGradePrices = () => {
+  const saved = compProductParam.value.translations?.zh?.gradePrices
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved) as Partial<GradePrice>[]
+      gradePrices.value = productGrades.map(grade => {
+        const item = parsed.find(entry => entry.grade === grade)
+        return {
+          grade,
+          enabled: item?.enabled === true,
+          cny: String(item?.cny ?? ''),
+          usd: String(item?.usd ?? ''),
+          eur: String(item?.eur ?? ''),
+          usdManual: item?.usdManual === true,
+          eurManual: item?.eurManual === true,
+        }
+      })
+      if (gradePrices.value.some(item => item.enabled)) return
+    } catch { /* Fall through to legacy price migration. */ }
+  }
+  gradePrices.value = emptyGradePrices()
+}
 const loadExchangeRates = async () => {
   try {
     exchangeRates.value = (await getExchangeRatesAPI()).data
@@ -64,35 +107,25 @@ const loadExchangeRates = async () => {
     exchangeRateError.value = true
   }
 }
-const convertedPrice = (currency: 'USD' | 'EUR') => {
-  const price = Number(compProductParam.value.price)
-  const rate = exchangeRates.value?.rates?.[currency]
-  return Number.isFinite(price) && rate ? (price * rate).toFixed(2) : '--'
-}
 const syncConvertedPrices = () => {
-  const price = Number(compProductParam.value.price)
   const rates = exchangeRates.value?.rates
-  if (!Number.isFinite(price) || !rates?.USD || !rates.EUR) return
+  if (!rates?.USD || !rates.EUR) return
   const translations = compProductParam.value.translations || {}
-  compProductParam.value.translations = {
-    ...translations,
-    en: translations.en?.priceManual === 'true' ? translations.en : { ...translations.en, price: (price * rates.USD).toFixed(2), priceRate: String(rates.USD), priceCurrency: 'USD' },
-    pt: translations.pt?.priceManual === 'true' ? translations.pt : { ...translations.pt, price: (price * rates.EUR).toFixed(2), priceRate: String(rates.EUR), priceCurrency: 'EUR' },
-  }
   const originalPrice = Number(compProductParam.value.originalPrice)
   if (compProductParam.value.originalPrice != null && Number.isFinite(originalPrice) && originalPrice >= 0) {
     for (const [language, rate] of [['en', rates.USD], ['pt', rates.EUR]] as const) {
-      const saved = compProductParam.value.translations[language] || {}
-      if (saved.originalPriceManual !== 'true') compProductParam.value.translations[language] = { ...saved, originalPrice: (originalPrice * rate).toFixed(2), originalPriceRate: String(rate) }
+      const saved = translations[language] || {}
+      if (saved.originalPriceManual !== 'true') translations[language] = { ...saved, originalPrice: (originalPrice * rate).toFixed(2), originalPriceRate: String(rate) }
     }
+    compProductParam.value.translations = translations
   }
 }
-watch(() => [compProductParam.value.price, compProductParam.value.originalPrice, exchangeRates.value], syncConvertedPrices, { deep: true })
+watch(() => [compProductParam.value.originalPrice, exchangeRates.value], syncConvertedPrices, { deep: true })
 const editForeignPrice = (language: 'en' | 'pt', value: string, field: 'price' | 'originalPrice' = 'price') => {
   const translations = compProductParam.value.translations || {}
   compProductParam.value.translations = { ...translations, [language]: { ...translations[language], [field]: value, [`${field}Manual`]: 'true' } }
 }
-const changeCnyPrice = (field: 'price' | 'originalPrice', value: string) => {
+const changeCnyPrice = (field: 'originalPrice', value: string) => {
   compProductParam.value[field] = value === '' ? undefined : Number(value)
   const translations = compProductParam.value.translations || {}
   for (const language of ['en', 'pt'] as const) {
@@ -100,6 +133,54 @@ const changeCnyPrice = (field: 'price' | 'originalPrice', value: string) => {
   }
   compProductParam.value.translations = translations
   syncConvertedPrices()
+}
+const persistGradePrices = () => {
+  const translations = compProductParam.value.translations || {}
+  compProductParam.value.translations = {
+    ...translations,
+    zh: { ...translations.zh, gradePrices: JSON.stringify(gradePrices.value) },
+  }
+  const primary = gradePrices.value.find(item => item.enabled)
+  if (!primary) return
+  compProductParam.value.price = primary.cny === '' ? undefined : Number(primary.cny)
+  compProductParam.value.translations.en = {
+    ...compProductParam.value.translations.en,
+    price: primary.usd,
+    priceManual: String(primary.usdManual),
+    priceRate: String(exchangeRates.value?.rates.USD || ''),
+    priceCurrency: 'USD',
+  }
+  compProductParam.value.translations.pt = {
+    ...compProductParam.value.translations.pt,
+    price: primary.eur,
+    priceManual: String(primary.eurManual),
+    priceRate: String(exchangeRates.value?.rates.EUR || ''),
+    priceCurrency: 'EUR',
+  }
+}
+const changeGradeEnabled = (item: GradePrice) => {
+  if (!gradePrices.value.some(entry => entry.enabled)) {
+    item.enabled = true
+    return ElMessage.warning('至少选择一个商品等级')
+  }
+  persistGradePrices()
+}
+const changeGradeCny = (item: GradePrice, value: string) => {
+  item.cny = value
+  const cny = Number(value)
+  const rates = exchangeRates.value?.rates
+  if (value !== '' && Number.isFinite(cny) && rates?.USD && rates.EUR) {
+    item.usd = (cny * rates.USD).toFixed(2)
+    item.eur = (cny * rates.EUR).toFixed(2)
+    item.usdManual = false
+    item.eurManual = false
+  }
+  persistGradePrices()
+}
+const changeGradeForeign = (item: GradePrice, currency: 'usd' | 'eur', value: string) => {
+  item[currency] = value
+  item[currency === 'usd' ? 'usdManual' : 'eurManual'] = true
+  persistGradePrices()
 }
 // 获取品牌列表数据
 const getBrandList = async () => {
@@ -109,10 +190,15 @@ const getBrandList = async () => {
 
 // 初始化数据
 onMounted(async () => {
+  loadGradePrices()
   await getProductCateList()
   await getBrandList()
   await loadExchangeRates()
+  gradePrices.value.forEach(item => {
+    if (item.enabled && item.cny !== '' && !item.usdManual && !item.eurManual) changeGradeCny(item, item.cny)
+  })
 })
+watch(() => compProductParam.value.id, loadGradePrices)
 
 // 表单引用
 const productInfoForm = ref<FormInstance>()
@@ -126,13 +212,18 @@ const rules = {
   productCategoryId: [{ required: true, message: '请选择商品分类', trigger: 'change' }],
   brandId: [{ required: true, message: '请选择商品品牌', trigger: 'change' }],
   description: [{ required: true, message: '请输入商品介绍', trigger: 'blur' }],
+  productSn: [{ required: true, message: '请输入商品货号', trigger: 'blur' }],
   requiredProp: [{ required: true, message: '该项为必填项', trigger: 'blur' }]
 }
 
 // 下一步按钮出来事件
 const handleNext = async () => {
+  const selectedGrades = gradePrices.value.filter(item => item.enabled)
+  if (!selectedGrades.length) return ElMessage.warning('至少选择一个商品等级')
+  const invalidGrade = selectedGrades.find(item => [item.cny, item.usd, item.eur].some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0))
+  if (invalidGrade) return ElMessage.warning(`请填写 ${invalidGrade.grade} 等级的有效人民币、美元和欧元售价`)
+  persistGradePrices()
   const prices = [
-    { label: '人民币商品售价', value: compProductParam.value.price },
     { label: '人民币市场价', value: compProductParam.value.originalPrice },
   ]
   const invalidPrice = prices.find(item => item.value == null || !Number.isFinite(Number(item.value)) || Number(item.value) < 0)
@@ -190,25 +281,28 @@ const handleBrandChange = (val: number) => {
           placeholder="请输入内容"></el-input>
         <multilingual-fields v-model="compProductParam.translations" :source="compProductParam" :show-chinese="false" :fields="[{key:'description',label:'商品介绍',type:'textarea'}]" />
       </el-form-item>
-      <el-form-item label="商品货号：">
+      <el-form-item label="商品货号：" prop="productSn">
         <el-input v-model="compProductParam.productSn"></el-input>
       </el-form-item>
-      <el-form-item label="商品售价（CNY）：" label-width="155px" required>
-        <el-input :model-value="compProductParam.price" @update:model-value="changeCnyPrice('price', $event)"></el-input>
-        <div class="price-conversion-hint">
-          <template v-if="exchangeRates && !exchangeRateError">
-            汇率来源：{{ exchangeRates.source || '实时汇率' }}，日期：{{ exchangeRates.date || '今日' }}
-          </template>
-          <span v-else>汇率暂时不可用</span>
+      <el-form-item label="商品售价：" required>
+        <div class="grade-price-editor">
+          <div class="grade-price-header">
+            <span>等级</span><span>人民币（CNY）</span><span>美元（USD）</span><span>欧元（EUR）</span>
+          </div>
+          <div v-for="item in gradePrices" :key="item.grade" class="grade-price-row" :class="{ disabled: !item.enabled }">
+            <el-checkbox v-model="item.enabled" @change="changeGradeEnabled(item)">{{ item.grade }}</el-checkbox>
+            <el-input :model-value="item.cny" type="number" min="0" :disabled="!item.enabled" @update:model-value="changeGradeCny(item, $event)" />
+            <el-input :model-value="item.usd" type="number" min="0" :disabled="!item.enabled" @update:model-value="changeGradeForeign(item, 'usd', $event)" />
+            <el-input :model-value="item.eur" type="number" min="0" :disabled="!item.enabled" @update:model-value="changeGradeForeign(item, 'eur', $event)" />
+          </div>
+          <div class="price-conversion-hint">
+            <template v-if="exchangeRates && !exchangeRateError">
+              汇率来源：{{ exchangeRates.source || '实时汇率' }}，日期：{{ exchangeRates.date || '今日' }}；
+              1 CNY = {{ exchangeRates.rates.USD }} USD，1 CNY = {{ exchangeRates.rates.EUR }} EUR
+            </template>
+            <span v-else>汇率暂时不可用，美元和欧元价格请手动填写</span>
+          </div>
         </div>
-      </el-form-item>
-      <el-form-item label="美元价格（USD）：">
-        <el-input :model-value="compProductParam.translations?.en?.price" type="number" min="0" @update:model-value="editForeignPrice('en', $event)" />
-        <div class="price-conversion-hint">汇率：1 CNY = {{ exchangeRates?.rates.USD || '--' }} USD</div>
-      </el-form-item>
-      <el-form-item label="欧元价格（EUR）：">
-        <el-input :model-value="compProductParam.translations?.pt?.price" type="number" min="0" @update:model-value="editForeignPrice('pt', $event)" />
-        <div class="price-conversion-hint">汇率：1 CNY = {{ exchangeRates?.rates.EUR || '--' }} EUR</div>
       </el-form-item>
       <el-form-item label="市场价（CNY）：" required>
         <el-input :model-value="compProductParam.originalPrice" @update:model-value="changeCnyPrice('originalPrice', $event)"></el-input>
@@ -246,6 +340,11 @@ const handleBrandChange = (val: number) => {
 
 <style scoped>
 .price-conversion-hint { margin-top: 6px; color: #8a98a8; font-size: 12px; line-height: 1.7; }
+.grade-price-editor { width: 100%; padding: 14px; border: 1px solid var(--el-border-color); border-radius: 6px; background: #fafbfd; }
+.grade-price-header,.grade-price-row { display: grid; grid-template-columns: 90px repeat(3,minmax(140px,1fr)); gap: 12px; align-items: center; }
+.grade-price-header { margin-bottom: 8px; color: var(--el-text-color-secondary); font-size: 13px; }
+.grade-price-row + .grade-price-row { margin-top: 10px; }
+.grade-price-row.disabled { opacity: .62; }
 .foreign-price-row { display:flex; align-items:center; gap:8px; width:100%; margin-top:8px; white-space:nowrap; }
 .foreign-price-row .el-input { width:150px; }
 .foreign-price-row span { color:#8a98a8; font-size:12px; }

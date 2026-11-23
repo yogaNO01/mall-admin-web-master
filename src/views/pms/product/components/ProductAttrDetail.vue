@@ -5,8 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import { getProductAttributeCategoryListAPI as fetchProductAttrCateList } from '@/apis/productAttrCate'
 import { getProductAttributeListAPI, getProductAttrInfoByCateIdAPI as getCategoryAttributeInfoAPI } from '@/apis/productAttr'
-import { isColorSpec, parseProductColor, encodeProductColor } from '@/utils/product-colors'
-import SingleUpload from '@/components/Upload/singleUpload.vue'
+import { isColorSpec, parseProductColor } from '@/utils/product-colors'
 import type { PmsProductParam } from '@/types/product'
 import type { ElSelectDataVo } from '@/types/common'
 import MultiUpload from '@/components/Upload/multiUpload.vue'
@@ -46,7 +45,6 @@ const state = reactive({
   // 选中的商品属性图片
   // 可手动添加的商品属性
   addProductAttrValue: '',
-  addProductAttrColor: '#30486D',
 })
 
 const unifiedDetails = ref<InstanceType<typeof UnifiedProductDetails>>()
@@ -92,35 +90,6 @@ const getProductAttrCateList = async () => {
 onMounted(async () => {
   await getProductAttrCateList()
 })
-
-const hasColorSpec = computed(() => state.selectProductAttr.some(attr => isColorAttribute(attr)))
-
-const colorAlbums = computed<Record<string, string[]>>(() => {
-  try {
-    const data: unknown = JSON.parse(compProductParam.value.translations?.zh?.colorAlbums || '{}')
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
-    return Object.fromEntries(Object.entries(data).filter(([, urls]) =>
-      Array.isArray(urls) && urls.every(url => typeof url === 'string'),
-    ))
-  } catch {
-    return {}
-  }
-})
-
-const saveColorAlbums = (albums: Record<string, string[]>) => {
-  const translations = compProductParam.value.translations
-  compProductParam.value.translations = {
-    ...translations,
-    zh: { ...translations?.zh, colorAlbums: JSON.stringify(albums) },
-  }
-}
-
-const setColorAlbum = (color: string, images: string[]) => {
-  const albums = { ...colorAlbums.value, [color]: images.slice(0, 10) }
-  if (!images.length) delete albums[color]
-  saveColorAlbums(albums)
-}
-
 
 // 商品的主图和画册图片
 const selectProductPics = computed({
@@ -174,7 +143,8 @@ const handleEditCreated = () => {
 const getProductAttrList = async (type: number, cid: number) => {
   const param = { pageNum: 1, pageSize: 100, type: type }
   const res = await getProductAttributeListAPI(cid, param)
-  const list = res.data.list
+  // 品质等级由第一步的 7A/10A/12A 等级售价统一维护，不再作为商品参数重复填写。
+  const list = res.data.list.filter(item => item.name?.trim() !== '品质等级')
   if (type === 0) {
     state.selectProductAttr = []
     for (let i = 0; i < list.length; i++) {
@@ -321,30 +291,14 @@ const translateColor = async (attr: ProductAttrVo, index: number) => {
     translatingColors[key] = false
   }
 }
-const changeColorValue = (index: number, value: string, color: string | null) => {
-  if (!color) return
-  const attr = state.selectProductAttr[index]!
-  const next = encodeProductColor(parseProductColor(value).name, color)
-  if (next !== value && attr.options?.includes(next)) return ElMessage.warning('该颜色已存在')
-  if (next !== value && colorAlbums.value[value]?.length) {
-    const albums = { ...colorAlbums.value, [next]: colorAlbums.value[value]! }
-    delete albums[value]
-    saveColorAlbums(albums)
-  }
-  attr.options = attr.options?.map(option => option === value ? next : option)
-  attr.values = attr.values?.map(option => option === value ? next : option)
-  for (const sku of compProductParam.value.skuStockList || []) {
-    const specs = JSON.parse(sku.spData || '[]')
-    for (const spec of specs) if (spec.key === attr.name && spec.value === value) spec.value = next
-    sku.spData = JSON.stringify(specs)
-  }
-}
-
 const addColorValue = (index: number) => {
   const attr = state.selectProductAttr[index]!
-  if (!state.addProductAttrValue.trim()) return ElMessage.warning('请填写颜色名称')
-  const value = encodeProductColor(state.addProductAttrValue, state.addProductAttrColor)
-  if (attr.options?.includes(value)) return ElMessage.warning('该颜色已存在')
+  const value = state.addProductAttrValue.trim()
+  if (!value) return ElMessage.warning('请填写颜色名称')
+  if (/[,，|]/.test(value)) return ElMessage.warning('颜色名称不能包含逗号或竖线')
+  if (attr.options?.some(option => parseProductColor(option).name.trim() === value)) {
+    return ElMessage.warning('该颜色已存在')
+  }
   attr.options ||= []
   attr.values ||= []
   attr.options.push(value)
@@ -532,10 +486,6 @@ const handleNext = async () => {
   if (!state.selectProductAttr.length || state.selectProductAttr.some(attr => !attr.values?.length)) {
     return ElMessage.warning('请选择各项商品规格，颜色可使用取色器添加')
   }
-  if (hasColorSpec.value && !compProductParam.value.pic?.trim()) {
-    document.getElementById('product-default-cover')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    return ElMessage.warning('请先上传默认封面')
-  }
   if (!compProductParam.value.skuStockList?.length) {
     return ElMessage.warning('请先生成 SKU 组合并确认库存')
   }
@@ -566,12 +516,6 @@ const handleNext = async () => {
           </el-option>
         </el-select>
       </el-form-item>
-      <el-form-item v-if="hasColorSpec" id="product-default-cover" label="默认封面：" required>
-        <div>
-          <single-upload class="default-cover-upload" compact purpose="product-gallery" v-model="compProductParam.pic" />
-          <div class="cover-tip">用于官网商品卡片。颜色没有相册时，详情页优先展示此封面。</div>
-        </div>
-      </el-form-item>
       <el-form-item label="商品规格：" required>
         <el-card shadow="never" class="cardBg">
           <div v-for="(productAttr, idx) in state.selectProductAttr" :key="'productAttr' + idx">
@@ -581,15 +525,11 @@ const handleNext = async () => {
               <div v-for="(item, colorIndex) in productAttr.options" :key="item" class="color-entry">
                 <div class="color-option-row">
                   <el-checkbox :value="item">
-                    <span class="color-dot" :style="{ backgroundColor: parseProductColor(item).color }" />
                     {{ parseProductColor(item).name }}
                   </el-checkbox>
-                  <el-color-picker :model-value="parseProductColor(item).color" color-format="hex" @change="changeColorValue(idx, item, $event)" />
                   <el-button link @click="handleRemoveProductAttrValue(idx, colorIndex)">删除</el-button>
                 </div>
                 <div class="color-entry-panels">
-                <details class="color-panel">
-                  <summary>多语言名称</summary>
                   <div class="color-translations">
                   <el-input :model-value="colorTranslation(productAttr, 'en', colorIndex)" placeholder="英文颜色名称" @update:model-value="setColorTranslation(productAttr, 'en', colorIndex, $event)">
                     <template #prepend>EN</template>
@@ -602,24 +542,11 @@ const handleNext = async () => {
                   </el-input>
                   <el-button :loading="translatingColors[`${productAttr.id}-${colorIndex}`]" @click="translateColor(productAttr, colorIndex)">补齐译文</el-button>
                   </div>
-                </details>
-                <details v-if="productAttr.values?.includes(item)" class="color-panel">
-                  <summary>颜色相册（选填）
-                    <span class="color-album-count">{{ colorAlbums[item]?.length || 0 }}/10</span>
-                  </summary>
-                  <div class="color-album">
-                    <p>支持 JPG、PNG、GIF，单张最大 2 MB</p>
-                    <multi-upload purpose="product-gallery" :max-count="10" :model-value="colorAlbums[item] || []"
-                      @update:model-value="setColorAlbum(item, $event)" />
-                  </div>
-                </details>
                 </div>
               </div>
               </el-checkbox-group>
               <div class="color-option-row">
                 <el-input v-model="state.addProductAttrValue" placeholder="颜色名称，例如米白色" style="width:180px" />
-                <el-color-picker v-model="state.addProductAttrColor" color-format="hex" />
-                <span>{{ state.addProductAttrColor }}</span>
                 <el-button @click="addColorValue(idx)">添加颜色</el-button>
               </div>
             </div>
@@ -700,8 +627,11 @@ const handleNext = async () => {
           </div>
         </el-card>
       </el-form-item>
-      <el-form-item v-if="!hasColorSpec" label="商品相册：">
-        <multi-upload purpose="product-gallery" v-model="selectProductPics"></multi-upload>
+      <el-form-item label="商品相册：">
+        <div>
+          <multi-upload purpose="product-gallery" :max-count="10" v-model="selectProductPics" />
+          <div class="product-gallery-tip">第一张作为官网商品封面，最多 10 张，单张最大 2 MB。</div>
+        </div>
       </el-form-item>
       <el-form-item label="商品详情：">
         <unified-product-details ref="unifiedDetails" :product="compProductParam" />
@@ -717,18 +647,9 @@ const handleNext = async () => {
 </template>
 
 <style scoped>
+.product-gallery-tip { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .default-cover-upload :deep(.compact-preview) { width: 96px; height: 96px; }
-.cover-tip { margin-top: 6px; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
-.color-entry-panels { margin-top: 8px; border-top: 1px solid var(--el-border-color-lighter); }
-.color-panel + .color-panel { border-top: 1px solid var(--el-border-color-lighter); }
-.color-panel summary { cursor: pointer; padding: 8px 4px; font-size: 13px; line-height: 1.5; }
-.color-panel summary:hover { color: var(--el-color-primary); }
-.color-album-count { margin-left: 8px; font-variant-numeric: tabular-nums; color: var(--el-text-color-secondary); }
-.color-album { display: grid; gap: 10px; padding: 4px 4px 10px; line-height: 1.5; }
-.color-album p { margin: 0; font-size: 12px; color: var(--el-text-color-secondary); }
-.color-album :deep(.el-upload-list--picture-card) { margin: 0; }
-.color-album :deep(.el-upload-list--picture-card) { --el-upload-list-picture-card-size: 76px; }
-.color-album :deep(.el-upload--picture-card) { --el-upload-picture-card-size: 76px; }
+.color-entry-panels { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--el-border-color-lighter); }
 .sku-editor { width: 100%; min-width: 0; }
 .sku-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .sku-toolbar span { flex: 1 1 220px; color: var(--el-text-color-secondary); }
@@ -740,7 +661,6 @@ const handleNext = async () => {
 .color-translations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); align-items: center; gap: 8px; padding: 4px 4px 10px; }
 .color-translations > .el-button { justify-self: start; }
 .color-option-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
-.color-dot { display:inline-block; width:18px; height:18px; margin-right:6px; border:1px solid #cbd3df; border-radius:50%; vertical-align:middle; }
 .littleMarginLeft {
   margin-left: 10px;
 }
