@@ -6,7 +6,7 @@ import { autoTranslateAPI } from '@/apis/translation'
 import type { PmsProductParam } from '@/types/product'
 
 const props = defineProps<{ product: PmsProductParam }>()
-const languages = ['en', 'pt', 'es'] as const
+const languages = ['en', 'pt', 'es', 'it', 'fr'] as const
 const language = ref<'zh' | typeof languages[number]>('zh')
 const device = ref<'pc' | 'h5'>('pc')
 const visible = ref(false)
@@ -105,6 +105,8 @@ defineExpose({ prepare })
           <el-radio-button value="en">EN</el-radio-button>
           <el-radio-button value="pt">PT</el-radio-button>
           <el-radio-button value="es">ES</el-radio-button>
+          <el-radio-button value="it">IT</el-radio-button>
+          <el-radio-button value="fr">FR</el-radio-button>
         </el-radio-group>
         <el-radio-group v-model="device">
           <el-radio-button value="pc">PC</el-radio-button>
