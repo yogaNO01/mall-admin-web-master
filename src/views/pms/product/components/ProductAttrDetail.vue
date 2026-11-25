@@ -12,7 +12,7 @@ import MultiUpload from '@/components/Upload/multiUpload.vue'
 import type { ProductAttrVo, ProductParamVo } from '@/types/productAttr'
 import type { PmsSkuStock } from '@/types/skuStock'
 import UnifiedProductDetails from './UnifiedProductDetails.vue'
-import { autoTranslateAPI } from '@/apis/translation'
+import SingleUpload from '@/components/Upload/singleUpload.vue'
 
 // 定义属性
 const props = defineProps({
@@ -30,7 +30,6 @@ const compProductParam = inject('product-key') as Ref<PmsProductParam>
 
 // 模板引用
 const productAttrForm = ref<FormInstance>()
-const translatingColors = reactive<Record<string, boolean>>({})
 
 // 响应式数据
 const state = reactive({
@@ -92,38 +91,6 @@ onMounted(async () => {
 })
 
 // 商品的主图和画册图片
-const selectProductPics = computed({
-  get: function () {
-    const pics: string[] = []
-    if (!compProductParam.value.pic || compProductParam.value.pic === '') {
-      return pics
-    }
-    pics.push(compProductParam.value.pic)
-    if (!compProductParam.value.albumPics || compProductParam.value.albumPics === '') {
-      return pics
-    }
-    const albumPics = compProductParam.value.albumPics.split(',')
-    pics.push(...albumPics)
-    return pics
-  },
-  set: function (newValue) {
-    if (!newValue || newValue.length === 0) {
-      compProductParam.value.pic = undefined
-      compProductParam.value.albumPics = undefined
-    } else {
-      compProductParam.value.pic = newValue[0]
-      compProductParam.value.albumPics = ''
-      if (newValue.length > 1) {
-        for (let i = 1; i < newValue.length; i++) {
-          compProductParam.value.albumPics += newValue[i]
-          if (i !== newValue.length - 1) {
-            compProductParam.value.albumPics += ','
-          }
-        }
-      }
-    }
-  }
-})
 
 
 // 处理编辑模式初始化的数据
@@ -150,7 +117,8 @@ const getProductAttrList = async (type: number, cid: number) => {
     for (let i = 0; i < list.length; i++) {
       const item = list[i]!
       const dictionaryOptions = item.inputList?.split(',') || []
-      let options = dictionaryOptions.filter(Boolean)
+      const colorAttribute = item.filterType === 1 || isColorSpec(item.name)
+      let options = colorAttribute && !props.isEdit ? [] : dictionaryOptions.filter(Boolean)
       let values: string[] = []
       if (props.isEdit) {
         if (item.handAddStatus === 1 || item.filterType === 1 || isColorSpec(item.name)) {
@@ -163,7 +131,7 @@ const getProductAttrList = async (type: number, cid: number) => {
       const savedTranslations = compProductParam.value.productAttributeValueList?.find(value => value.productAttributeId === item.id)?.translations
       const translations = { ...savedTranslations }
       if (item.filterType === 1 || isColorSpec(item.name)) {
-        for (const language of ['en', 'pt', 'es'] as const) {
+        for (const language of ['en', 'pt', 'es', 'it', 'fr'] as const) {
           const dictionaryNames = item.translations?.[language]?.inputList?.split(',') || []
           const savedNames = savedTranslations?.[language]?.value?.split(',') || []
           const names = options.map((option, index) => {
@@ -259,61 +227,30 @@ watch(() => compProductParam.value.productCategoryId, async (id, previousId) => 
 })
 
 const isColorAttribute = (attribute: ProductAttrVo) => attribute.filterType === 1 || isColorSpec(attribute.name)
-const colorLanguages = [
-  { code: 'en', label: '英文', badge: 'EN' },
-  { code: 'pt', label: '葡语', badge: 'PT' },
-  { code: 'es', label: '西语', badge: 'ES' },
-] as const
-const colorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt' | 'es', index: number) =>
-  attr.translations?.[language]?.value?.split(',')[index]?.trim() || ''
-const setColorTranslation = (attr: ProductAttrVo, language: 'en' | 'pt' | 'es', index: number, value: string) => {
-  const names = attr.translations?.[language]?.value?.split(',') || []
-  names[index] = value.replace(/,/g, '，')
-  attr.translations = {
-    ...attr.translations,
-    [language]: { ...attr.translations?.[language], value: names.join(',') }
-  }
-}
-const translateColor = async (attr: ProductAttrVo, index: number) => {
-  const name = parseProductColor(attr.options?.[index] || '').name.trim()
-  const targets = (['en', 'pt', 'es'] as const).filter(language => !colorTranslation(attr, language, index))
-  if (!name) return
-  if (!targets.length) return ElMessage.info('颜色译文已齐全')
-  const key = `${attr.id}-${index}`
-  translatingColors[key] = true
-  const previous = Object.fromEntries(targets.map(language => [language, colorTranslation(attr, language, index)]))
+type ColorAlbum = { thumbnail: string; images: string[] }
+function colorAlbums(attr: ProductAttrVo): Record<string, ColorAlbum> {
   try {
-    const result = await autoTranslateAPI({ text: name, targetLangs: targets })
-    if (parseProductColor(attr.options?.[index] || '').name !== name) return
-    for (const language of targets) {
-      if (colorTranslation(attr, language, index) === previous[language] && result.data[language]) {
-        setColorTranslation(attr, language, index, result.data[language])
-      }
-    }
-  } catch {
-    // The shared request client reports the error; both fields remain editable.
-  } finally {
-    translatingColors[key] = false
-  }
+    const parsed = JSON.parse(attr.translations?.zh?.colorAlbums || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch { return {} }
 }
-const addColorValue = (index: number) => {
+function colorAlbum(attr: ProductAttrVo, key: string) {
+  return colorAlbums(attr)[key] || { thumbnail: '', images: [] }
+}
+function updateColorAlbum(attr: ProductAttrVo, key: string, changes: Partial<ColorAlbum>) {
+  const albums = colorAlbums(attr)
+  albums[key] = { ...colorAlbum(attr, key), ...changes }
+  attr.translations = { ...attr.translations, zh: { ...attr.translations?.zh, colorAlbums: JSON.stringify(albums) } }
+}
+const getInputListArr = (inputList: string) => inputList.split(',')
+
+function addColorValue(index: number) {
   const attr = state.selectProductAttr[index]!
-  const value = state.addProductAttrValue.trim()
-  if (!value) return ElMessage.warning('请填写颜色名称')
-  if (/[,，|]/.test(value)) return ElMessage.warning('颜色名称不能包含逗号或竖线')
-  if (attr.options?.some(option => parseProductColor(option).name.trim() === value)) {
-    return ElMessage.warning('该颜色已存在')
-  }
+  const key = createSkuCode().replace('SKU-', 'color-')
   attr.options ||= []
   attr.values ||= []
-  attr.options.push(value)
-  attr.values.push(value)
-  state.addProductAttrValue = ''
-  void translateColor(attr, attr.options.length - 1)
-}
-
-const getInputListArr = (inputList: string) => {
-  return inputList.split(',')
+  attr.options.push(key)
+  attr.values.push(key)
 }
 
 const handleAddProductAttrValue = (idx: number) => {
@@ -343,7 +280,12 @@ const handleRemoveProductAttrValue = (idx: number, index: number) => {
   const removed = attr.options?.splice(index, 1)[0]
   attr.values = attr.values?.filter(value => value !== removed)
   if (isColorAttribute(attr)) {
-    for (const language of ['en', 'pt', 'es'] as const) {
+    if (removed) {
+      const albums = colorAlbums(attr)
+      delete albums[removed]
+      attr.translations = { ...attr.translations, zh: { ...attr.translations?.zh, colorAlbums: JSON.stringify(albums) } }
+    }
+    for (const language of ['en', 'pt', 'es', 'it', 'fr'] as const) {
       const names = attr.translations?.[language]?.value?.split(',') || []
       names.splice(index, 1)
       attr.translations = { ...attr.translations, [language]: { ...attr.translations?.[language], value: names.join(',') } }
@@ -351,10 +293,17 @@ const handleRemoveProductAttrValue = (idx: number, index: number) => {
   }
 }
 
+function removeColorGroup(attrIndex: number, value: string) {
+  const optionIndex = state.selectProductAttr[attrIndex]?.options?.indexOf(value) ?? -1
+  if (optionIndex >= 0) handleRemoveProductAttrValue(attrIndex, optionIndex)
+}
+
 const getProductSkuSp = (row: PmsSkuStock, index: number) => {
   const spData = JSON.parse(row.spData!)
   if (spData != null && index < spData.length) {
-    return isColorSpec(spData[index].key) ? parseProductColor(spData[index].value).name : spData[index].value
+    const { key, value } = spData[index]
+    const attr = state.selectProductAttr.find(item => item.name === key)
+    return attr && isColorAttribute(attr) ? `颜色组 ${(attr.values?.indexOf(value) ?? -1) + 1}` : value
   } else {
     return null
   }
@@ -491,19 +440,14 @@ const handleNext = async () => {
   if (!state.selectProductAttr.length || state.selectProductAttr.some(attr => !attr.values?.length)) {
     return ElMessage.warning('请选择各项商品规格')
   }
-  for (const attr of state.selectProductAttr.filter(isColorAttribute)) {
-    for (const value of attr.values || []) {
-      const name = parseProductColor(value).name.trim()
-      const index = attr.options?.indexOf(value) ?? -1
-      if (!name) return ElMessage.warning('请填写中文颜色名称')
-      const missing = colorLanguages.filter(({ code }) => !colorTranslation(attr, code, index))
-      if (missing.length) {
-        return ElMessage.warning(`请补齐「${name}」的${missing.map(({ label }) => label).join('、')}颜色名称`)
-      }
-    }
-  }
   if (!compProductParam.value.skuStockList?.length) {
     return ElMessage.warning('请先生成 SKU 组合并确认库存')
+  }
+  if (!compProductParam.value.pic) {
+    const albums = state.selectProductAttr.filter(isColorAttribute)
+      .flatMap(attr => (attr.values || []).map(value => colorAlbum(attr, value)))
+    const firstPhoto = albums.find(album => album.images.length)?.images[0]
+    compProductParam.value.pic = firstPhoto || albums.find(album => album.thumbnail)?.thumbnail
   }
   refreshProductSkuList()
   if (compProductParam.value.skuStockList.some(sku => !Number.isFinite(Number(sku.price)) || Number(sku.price) < 0)) {
@@ -533,40 +477,28 @@ const handleNext = async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="商品规格：" required>
-        <el-card shadow="never" class="cardBg">
+        <el-card shadow="never" class="cardBg product-spec-card">
           <div v-for="(productAttr, idx) in state.selectProductAttr" :key="'productAttr' + idx">
             {{ productAttr.name }}：
             <div v-if="isColorAttribute(productAttr)" class="color-editor">
-              <el-checkbox-group v-model="productAttr.values">
-              <div v-for="(item, colorIndex) in productAttr.options" :key="item" class="color-entry">
+              <div v-for="(item, colorIndex) in productAttr.values" :key="item" class="color-entry">
                 <div class="color-option-row">
-                  <el-checkbox :value="item">
-                    {{ parseProductColor(item).name }}
-                  </el-checkbox>
-                  <el-button link @click="handleRemoveProductAttrValue(idx, colorIndex)">删除</el-button>
+                  <span class="color-group-label">颜色组 {{ colorIndex + 1 }}</span>
+                  <el-button type="danger" link @click="removeColorGroup(idx, item)">删除</el-button>
                 </div>
                 <div class="color-entry-panels">
-                  <div class="color-translations">
-                  <el-input
-                    v-for="{ code, label, badge } in colorLanguages"
-                    :key="code"
-                    :model-value="colorTranslation(productAttr, code, colorIndex)"
-                    :placeholder="`${label}颜色名称`"
-                    :aria-label="`${parseProductColor(item).name}：${label}颜色名称`"
-                    :aria-required="productAttr.values?.includes(item)"
-                    @update:model-value="setColorTranslation(productAttr, code, colorIndex, $event)"
-                  >
-                    <template #prepend><span v-if="productAttr.values?.includes(item)" class="sku-required" aria-hidden="true">* </span>{{ badge }}</template>
-                  </el-input>
-                  <el-button :loading="translatingColors[`${productAttr.id}-${colorIndex}`]" @click="translateColor(productAttr, colorIndex)">补齐译文</el-button>
+                  <div class="color-upload-label">颜色缩略图</div>
+                  <single-upload class="color-thumbnail-upload" purpose="product-sku" compact :model-value="colorAlbum(productAttr, item).thumbnail"
+                    @update:model-value="updateColorAlbum(productAttr, item, { thumbnail: $event || '' })" />
+                  <div class="color-photo-heading">
+                    <div class="color-upload-label">商品照片</div>
+                    <div class="product-gallery-tip">支持多选，最多上传 10 张，每张不超过 2 MB。</div>
                   </div>
+                  <multi-upload purpose="product-gallery" :max-count="10" :model-value="colorAlbum(productAttr, item).images"
+                    @update:model-value="updateColorAlbum(productAttr, item, { images: $event })" />
                 </div>
               </div>
-              </el-checkbox-group>
-              <div class="color-option-row">
-                <el-input v-model="state.addProductAttrValue" placeholder="颜色名称，例如米白色" style="width:180px" />
-                <el-button @click="addColorValue(idx)">添加颜色</el-button>
-              </div>
+              <el-button @click="addColorValue(idx)">添加颜色组</el-button>
             </div>
             <el-checkbox-group v-else-if="productAttr.handAddStatus === 0" v-model="state.selectProductAttr[idx]!.values">
               <el-checkbox v-for="item in getInputListArr(productAttr.inputList!)" :label="item" :key="item"
@@ -645,12 +577,6 @@ const handleNext = async () => {
           </div>
         </el-card>
       </el-form-item>
-      <el-form-item label="商品相册：">
-        <div>
-          <multi-upload purpose="product-gallery" :max-count="10" v-model="selectProductPics" />
-          <div class="product-gallery-tip">第一张作为官网商品封面，最多 10 张，单张最大 2 MB。</div>
-        </div>
-      </el-form-item>
       <el-form-item label="商品详情：">
         <unified-product-details ref="unifiedDetails" :product="compProductParam" />
       </el-form-item>
@@ -667,8 +593,12 @@ const handleNext = async () => {
 <style scoped>
 .product-gallery-tip { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .default-cover-upload :deep(.compact-preview) { width: 96px; height: 96px; }
-.color-entry-panels { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--el-border-color-lighter); }
-.sku-editor { width: 100%; min-width: 0; }
+.color-entry-panels { display:grid; gap:8px; margin-top:8px; padding-top:10px; border-top:1px solid var(--el-border-color-lighter); }
+.color-upload-label { color:var(--el-text-color-primary); font-size:14px; font-weight:600; line-height:1.5; }
+.color-thumbnail-upload { justify-self:start; }
+.color-thumbnail-upload :deep(.compact-preview) { box-sizing:border-box; width:100px; height:100px; }
+.color-photo-heading { display:grid; gap:4px; margin-top:8px; }
+.product-spec-card, .sku-editor { box-sizing:border-box; width:100%; min-width:0; }
 .sku-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .sku-toolbar span { flex: 1 1 220px; color: var(--el-text-color-secondary); }
 .sku-toolbar :deep(.el-button + .el-button) { margin-left: 0; }
@@ -676,9 +606,8 @@ const handleNext = async () => {
 .sku-required { color: var(--el-color-danger); }
 .color-editor { margin:8px 0 20px; }
 .color-entry { margin:8px 0 16px; padding:10px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; }
-.color-translations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); align-items: center; gap: 8px; padding: 4px 4px 10px; }
-.color-translations > .el-button { justify-self: start; }
 .color-option-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
+.color-group-label { flex:1; font-weight:600; }
 .littleMarginLeft {
   margin-left: 10px;
 }
